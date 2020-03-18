@@ -8,7 +8,10 @@ edition = "2018"
 
 [dependencies]
 arrayref = "0.3"
-lorawan = { git = "https://github.com/ivajloip/rust-lorawan"}
+#lorawan = { git = "https://github.com/ivajloip/rust-lorawan"}
 semtech-udp = { git = "https://github.com/lthiery/semtech-udp"}
+lorawan = { path = "../rust-lorawan"}
 base64 = "0.12.0"
 mio = "0.6"
+aes = "0.3.2"
+openssl = "0.10.28"
