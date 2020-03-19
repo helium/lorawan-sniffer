@@ -24,7 +24,7 @@ fn main() -> Result<()> {
     // we in turn hold our own server for the radio to connect to
     let radio_server = "0.0.0.0:1680".parse()?;
     let mut radio_socket = UdpSocket::bind(&radio_server)?;
-    // we will figure out the connection alter
+    // we will figure out the connection later
 
     // setup the epoll events
     let poll = Poll::new()?;
@@ -44,9 +44,10 @@ fn main() -> Result<()> {
     let mut buffer = [0; 1024];
     let mut events = Events::with_capacity(128);
     // we will stash the client address here when we see it
-    // note: this approach only supports a single radio client
+    // warning: this approach only supports a single radio client
     let mut radio_client = None;
 
+    // we will stash join requests here as we will need them for deriving keys
     let mut last_join_request = None;
 
     loop {
