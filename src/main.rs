@@ -2,8 +2,8 @@ use semtech_udp;
 extern crate arrayref;
 use base64;
 use lorawan;
-use lorawan::parser::{GenericPhyPayload, MacPayload};
-use lorawan::{keys, securityhelpers};
+use lorawan::parser::{GenericPhyPayload, MacPayload, derive_newskey, derive_appskey};
+use lorawan::keys;
 use mio::net::UdpSocket;
 use mio::{Events, Poll, PollOpt, Ready, Token};
 use std::error::Error;
@@ -109,7 +109,7 @@ fn main() -> Result<()> {
                         let app_key = keys::AES128(key);
                         let decrypted_join_accept =
                             GenericPhyPayload::<[u8; 17]>::new_decrypted_join_accept(
-                                packet.0.clone(),
+                                packet.inner_ref().clone(),
                                 &app_key,
                             )
                             .unwrap();
@@ -134,14 +134,14 @@ fn main() -> Result<()> {
                                     if let MacPayload::JoinRequest(join_request) =
                                         packet.mac_payload()
                                     {
-                                        let newskey = securityhelpers::derive_newskey(
+                                        let newskey = derive_newskey(
                                             &join_accept.app_nonce(),
                                             &join_accept.net_id(),
                                             &join_request.dev_nonce(),
                                             &app_key,
                                         );
 
-                                        let appskey = securityhelpers::derive_appskey(
+                                        let appskey = derive_appskey(
                                             &join_accept.app_nonce(),
                                             &join_accept.net_id(),
                                             &join_request.dev_nonce(),
