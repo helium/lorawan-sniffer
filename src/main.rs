@@ -1,5 +1,6 @@
 use semtech_udp;
 extern crate arrayref;
+use base64;
 use lorawan;
 use lorawan::parser::{GenericPhyPayload, MacPayload};
 use lorawan::{keys, securityhelpers};
@@ -7,7 +8,6 @@ use mio::net::UdpSocket;
 use mio::{Events, Poll, PollOpt, Ready, Token};
 use std::error::Error;
 use std::time::Duration;
-use base64;
 
 const MINER: Token = Token(0);
 const RADIO: Token = Token(1);
@@ -106,11 +106,17 @@ fn main() -> Result<()> {
                             0xF5, 0x6F, 0x69, 0xC2,
                         ];
                         let app_key = keys::AES128(key);
-                        let decrypted_join_accept  = 
-                            GenericPhyPayload::<[u8; 17]>::new_decrypted_join_accept(packet.0.clone(), &app_key).unwrap();
+                        let decrypted_join_accept =
+                            GenericPhyPayload::<[u8; 17]>::new_decrypted_join_accept(
+                                packet.0.clone(),
+                                &app_key,
+                            )
+                            .unwrap();
 
                         if decrypted_join_accept.validate_join_mic(&app_key).unwrap() {
-                            if let MacPayload::JoinAccept(join_accept) =  decrypted_join_accept.mac_payload() {
+                            if let MacPayload::JoinAccept(join_accept) =
+                                decrypted_join_accept.mac_payload()
+                            {
                                 print!(
                                     "\r\nAppNonce: {:x?} NetId: {:x?} DevAddr: {:x?}",
                                     join_accept.app_nonce().as_ref(),
@@ -124,7 +130,9 @@ fn main() -> Result<()> {
                                 );
 
                                 if let Some(packet) = &last_join_request {
-                                    if let MacPayload::JoinRequest(join_request) = packet.mac_payload() {
+                                    if let MacPayload::JoinRequest(join_request) =
+                                        packet.mac_payload()
+                                    {
                                         let newskey = securityhelpers::derive_newskey(
                                             &join_accept.app_nonce(),
                                             &join_accept.net_id(),
@@ -147,8 +155,6 @@ fn main() -> Result<()> {
                         } else {
                             println!("Invalid MIC!");
                         }
-
-                        
                     }
                     MacPayload::Data(data) => println!("{:?}", data),
                 }
