@@ -16,15 +16,17 @@ type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
 fn main() -> Result<()> {
     // hard-code miner address for now
-    let miner_server = "192.168.2.68:1680".parse()?;
-    let mut miner_socket = UdpSocket::bind(&"0.0.0.0:58058".parse()?)?;
+    let miner_server = "192.168.1.30:1681".parse()?;
+    let mut miner_socket = UdpSocket::bind(&"0.0.0.0:1681".parse()?)?;
     // "connecting" filters for only frames from the server
     miner_socket.connect(miner_server)?;
+    miner_socket.send(&[0])?;
 
     // we in turn hold our own server for the radio to connect to
     let radio_server = "0.0.0.0:1680".parse()?;
     let mut radio_socket = UdpSocket::bind(&radio_server)?;
     // we will figure out the connection later
+
 
     // setup the epoll events
     let poll = Poll::new()?;
@@ -64,9 +66,20 @@ fn main() -> Result<()> {
                     let msg = semtech_udp::Packet::parse(&mut buffer, num_recv)?;
                     buffer = [0; 1024];
 
-                    if let semtech_udp::PacketData::PullResp(data) = msg.data() {
-                        let bytes = base64::decode(data.txpk.data.clone()).unwrap();
-                        packets.push(lorawan::parser::GenericPhyPayload::new(bytes)?);
+                    match msg.data() {
+                        semtech_udp::PacketData::PullResp(data) => {
+                            let bytes = base64::decode(data.txpk.data.clone()).unwrap();
+                            packets.push(lorawan::parser::GenericPhyPayload::new(bytes)?);
+                        }
+                        semtech_udp::PacketData::PushData(data) => {
+                            if let Some(rxpks) = &data.rxpk {
+                                for rxpk in rxpks {
+                                    let bytes = base64::decode(rxpk.data.clone()).unwrap();
+                                    packets.push(lorawan::parser::GenericPhyPayload::new(bytes)?)
+                                }
+                            }
+                        }
+                        _ => (),
                     }
                 }
                 RADIO => {
@@ -75,7 +88,6 @@ fn main() -> Result<()> {
                     miner_socket.send(&buffer[0..num_recv])?;
                     let msg = semtech_udp::Packet::parse(&mut buffer, num_recv)?;
                     buffer = [0; 1024];
-
                     if let semtech_udp::PacketData::PushData(data) = msg.data() {
                         if let Some(rxpks) = &data.rxpk {
                             for rxpk in rxpks {
