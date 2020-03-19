@@ -14,10 +14,10 @@ const MINER: Token = Token(0);
 const RADIO: Token = Token(1);
 
 #[derive(Debug, StructOpt)]
-#[structopt(name = "example", about = "An example of StructOpt usage.")]
+#[structopt(name = "lorawan-sniffer", about = "lorawan sniffing utility")]
 struct Opt {
-    /// Activate debug mode
-    // short and long flags (-d, --debug) will be deduced from the field's name
+    /// IP address and port of miner mirror port
+    /// (eg: 192.168.1.30:1681)
     #[structopt(short, long)]
     miner: String,
 }
@@ -35,19 +35,17 @@ fn main() -> Result<()> {
 }
 
 fn run(opt: Opt) -> Result {
-
-    // hard-code miner address for now
+    // try to parse the CLI iput
     let miner_server = opt.miner.parse()?;
     let mut miner_socket = UdpSocket::bind(&"0.0.0.0:1681".parse()?)?;
     // "connecting" filters for only frames from the server
     miner_socket.connect(miner_server)?;
+    // send something so that server can know about us
     miner_socket.send(&[0])?;
 
-    // we in turn hold our own server for the radio to connect to
+    // we in turn put up our own server for the radio to connect to
     let radio_server = "0.0.0.0:1680".parse()?;
     let mut radio_socket = UdpSocket::bind(&radio_server)?;
-    // we will figure out the connection later
-
 
     // setup the epoll events
     let poll = Poll::new()?;

@@ -233,6 +233,7 @@ dependencies = [
 [[package]]
 name = "lorawan"
 version = "0.4.2"
+source = "git+https://github.com/lthiery/rust-lorawan?branch=lthiery/derive-session-keys#0ba742b060c2791b19b773b5539e1b705271471d"
 dependencies = [
  "aes",
  "arrayref",
