@@ -1,16 +1,12 @@
 use semtech_udp;
 extern crate arrayref;
 use lorawan;
-use lorawan::parser::{JoinAcceptPayload, MacPayload};
+use lorawan::parser::{GenericPhyPayload, MacPayload};
 use lorawan::{keys, securityhelpers};
 use mio::net::UdpSocket;
 use mio::{Events, Poll, PollOpt, Ready, Token};
 use std::error::Error;
 use std::time::Duration;
-
-use aes::block_cipher_trait::generic_array::GenericArray;
-use aes::block_cipher_trait::BlockCipher;
-use aes::Aes128;
 use base64;
 
 const MINER: Token = Token(0);
@@ -69,16 +65,7 @@ fn main() -> Result<()> {
 
                     if let semtech_udp::PacketData::PullResp(data) = msg.data() {
                         let bytes = base64::decode(data.txpk.data.clone()).unwrap();
-
-                        let parser = lorawan::parser::GenericPhyPayload::new(bytes.clone())?;
-
-                        match parser.mac_payload() {
-                            MacPayload::JoinAccept(join_accept) => {
-                                println!("Bytes [{}] = {:x?}", bytes.len(), bytes);
-                            }
-                            _ => (),
-                        }
-                        packets.push(parser);
+                        packets.push(lorawan::parser::GenericPhyPayload::new(bytes)?);
                     }
                 }
                 RADIO => {
@@ -113,60 +100,55 @@ fn main() -> Result<()> {
                         );
                         last_join_request = Some(packet);
                     }
-                    MacPayload::JoinAccept(join_accept) => {
-                        // key in MSB
+                    MacPayload::JoinAccept(_) => {
                         let key = [
                             0xEB, 0x31, 0xA2, 0x94, 0x00, 0x51, 0x7C, 0x53, 0x12, 0xCF, 0xBF, 0xD5,
                             0xF5, 0x6F, 0x69, 0xC2,
                         ];
-
-                        let mut input_bytes = {
-                            let mut block = [0u8; 16];
-                            block[..16].clone_from_slice(&packet.0[1..]);
-                            block
-                        };
-
-                        let key_arr = GenericArray::from_slice(&key);
-                        let cipher = Aes128::new(key_arr);
-
-                        let mut data = GenericArray::clone_from_slice(&input_bytes);
-                        cipher.encrypt_block(&mut data);
-                        let decrypted_join_accept = JoinAcceptPayload::new(&data[..12]).unwrap();
-
-                        print!(
-                            "\r\nAppNonce: {:x?} NetId: {:x?} DevAddr: {:x?}",
-                            decrypted_join_accept.app_nonce().as_ref(),
-                            decrypted_join_accept.net_id().as_ref(),
-                            decrypted_join_accept.dev_addr().as_ref(),
-                        );
-                        println!(
-                            " DL Settings: {:x?} RxDelay: {:x?}",
-                            decrypted_join_accept.dl_settings(),
-                            decrypted_join_accept.rx_delay()
-                        );
-
                         let app_key = keys::AES128(key);
+                        let decrypted_join_accept  = 
+                            GenericPhyPayload::<[u8; 17]>::new_decrypted_join_accept(packet.0.clone(), &app_key).unwrap();
 
-                        if let Some(packet) = &last_join_request {
-                            if let MacPayload::JoinRequest(join_request) = packet.mac_payload() {
-                                let newskey = securityhelpers::derive_newskey(
-                                    &decrypted_join_accept.app_nonce(),
-                                    &decrypted_join_accept.net_id(),
-                                    &join_request.dev_nonce(),
-                                    &app_key,
+                        if decrypted_join_accept.validate_join_mic(&app_key).unwrap() {
+                            if let MacPayload::JoinAccept(join_accept) =  decrypted_join_accept.mac_payload() {
+                                print!(
+                                    "\r\nAppNonce: {:x?} NetId: {:x?} DevAddr: {:x?}",
+                                    join_accept.app_nonce().as_ref(),
+                                    join_accept.net_id().as_ref(),
+                                    join_accept.dev_addr().as_ref(),
+                                );
+                                println!(
+                                    " DL Settings: {:x?} RxDelay: {:x?}",
+                                    join_accept.dl_settings(),
+                                    join_accept.rx_delay()
                                 );
 
-                                let appskey = securityhelpers::derive_appskey(
-                                    &decrypted_join_accept.app_nonce(),
-                                    &decrypted_join_accept.net_id(),
-                                    &join_request.dev_nonce(),
-                                    &app_key,
-                                );
+                                if let Some(packet) = &last_join_request {
+                                    if let MacPayload::JoinRequest(join_request) = packet.mac_payload() {
+                                        let newskey = securityhelpers::derive_newskey(
+                                            &join_accept.app_nonce(),
+                                            &join_accept.net_id(),
+                                            &join_request.dev_nonce(),
+                                            &app_key,
+                                        );
 
-                                println!("newskey: {:x?}", newskey);
-                                println!("appskey: {:x?}", appskey);
+                                        let appskey = securityhelpers::derive_appskey(
+                                            &join_accept.app_nonce(),
+                                            &join_accept.net_id(),
+                                            &join_request.dev_nonce(),
+                                            &app_key,
+                                        );
+
+                                        println!("newskey: {:x?}", newskey);
+                                        println!("appskey: {:x?}", appskey);
+                                    }
+                                }
                             }
+                        } else {
+                            println!("Invalid MIC!");
                         }
+
+                        
                     }
                     MacPayload::Data(data) => println!("{:?}", data),
                 }
