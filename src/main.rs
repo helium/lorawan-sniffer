@@ -6,17 +6,38 @@ use lorawan::parser::{GenericPhyPayload, MacPayload, derive_newskey, derive_apps
 use lorawan::keys;
 use mio::net::UdpSocket;
 use mio::{Events, Poll, PollOpt, Ready, Token};
-use std::error::Error;
 use std::time::Duration;
+use structopt::StructOpt;
+use std::process;
 
 const MINER: Token = Token(0);
 const RADIO: Token = Token(1);
 
-type Result<T> = std::result::Result<T, Box<dyn Error>>;
+#[derive(Debug, StructOpt)]
+#[structopt(name = "example", about = "An example of StructOpt usage.")]
+struct Opt {
+    /// Activate debug mode
+    // short and long flags (-d, --debug) will be deduced from the field's name
+    #[structopt(short, long)]
+    miner: String,
+}
+
+pub type Result<T = ()> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 fn main() -> Result<()> {
+
+    let cli = Opt::from_args();
+    if let Err(e) = run(cli) {
+        println!("error: {}", e);
+        process::exit(1);
+    }
+    Ok(())
+}
+
+fn run(opt: Opt) -> Result {
+
     // hard-code miner address for now
-    let miner_server = "192.168.1.30:1681".parse()?;
+    let miner_server = opt.miner.parse()?;
     let mut miner_socket = UdpSocket::bind(&"0.0.0.0:1681".parse()?)?;
     // "connecting" filters for only frames from the server
     miner_socket.connect(miner_server)?;

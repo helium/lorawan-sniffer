@@ -7,6 +7,7 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+structopt = { version = "0.3.2", default-features = false }
 arrayref = "0.3"
 #lorawan = { git = "https://github.com/ivajloip/rust-lorawan"}
 semtech-udp = { git = "https://github.com/lthiery/semtech-udp"}
