@@ -5,19 +5,18 @@ use semtech_udp;
 extern crate arrayref;
 use base64;
 use lorawan;
-use lorawan::parser::{GenericPhyPayload, MacPayload, derive_newskey, derive_appskey};
 use lorawan::keys;
+use lorawan::parser::{derive_appskey, derive_newskey, GenericPhyPayload, MacPayload};
 use mio::net::UdpSocket;
 use mio::{Events, Poll, PollOpt, Ready, Token};
+use std::process;
 use std::time::Duration;
 use structopt::StructOpt;
-use std::process;
 
 const MINER: Token = Token(0);
 const RADIO: Token = Token(1);
 
 const DEVICES_PATH: &str = "lorawan-devices.json";
-
 
 #[derive(Debug, StructOpt)]
 #[structopt(name = "lorawan-sniffer", about = "lorawan sniffing utility")]
@@ -31,7 +30,6 @@ struct Opt {
 pub type Result<T = ()> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 fn main() -> Result<()> {
-
     let cli = Opt::from_args();
     if let Err(e) = run(cli) {
         println!("error: {}", e);
@@ -54,7 +52,7 @@ fn run(opt: Opt) -> Result {
         let mut ret = Vec::new();
         if let Some(devices) = devices {
             for device in devices {
-                ret.push( (device, None) );
+                ret.push((device, None));
             }
         }
         ret
@@ -146,23 +144,38 @@ fn run(opt: Opt) -> Result {
 
                         for device in &mut devices {
                             // compare bytes to hex string representation of bytes, flipped MSB
-                            let matches = if compare_bth_flipped(join_request.app_eui().as_ref(), &device.0.app_eui)? &&
-                            compare_bth_flipped(join_request.dev_eui().as_ref(), &device.0.dev_eui)?
-                             {
-                                device.1 = Some(GenericPhyPayload::new(packet.inner_ref().clone())?);
+                            let matches = if compare_bth_flipped(
+                                join_request.app_eui().as_ref(),
+                                &device.0.app_eui,
+                            )? && compare_bth_flipped(
+                                join_request.dev_eui().as_ref(),
+                                &device.0.dev_eui,
+                            )? {
+                                device.1 =
+                                    Some(GenericPhyPayload::new(packet.inner_ref().clone())?);
                             };
                         }
                     }
                     MacPayload::JoinAccept(_) => {
-
-
                         for device in &mut devices {
-                            let key_binary: Vec<u8> = hex::decode(device.0.app_key.clone())?;;
+                            let key_binary: Vec<u8> = hex::decode(device.0.app_key.clone())?;
                             let key: [u8; 16] = [
-                                key_binary[0], key_binary[1], key_binary[2], key_binary[3],
-                                key_binary[4], key_binary[5], key_binary[6], key_binary[7],
-                                key_binary[8], key_binary[9], key_binary[10], key_binary[11],
-                                key_binary[12], key_binary[13], key_binary[14], key_binary[15],
+                                key_binary[0],
+                                key_binary[1],
+                                key_binary[2],
+                                key_binary[3],
+                                key_binary[4],
+                                key_binary[5],
+                                key_binary[6],
+                                key_binary[7],
+                                key_binary[8],
+                                key_binary[9],
+                                key_binary[10],
+                                key_binary[11],
+                                key_binary[12],
+                                key_binary[13],
+                                key_binary[14],
+                                key_binary[15],
                             ];
                             let app_key = keys::AES128(key);
                             let decrypted_join_accept =
@@ -190,7 +203,7 @@ fn run(opt: Opt) -> Result {
 
                                     if let Some(phy_join_request) = &device.1 {
                                         if let MacPayload::JoinRequest(join_request) =
-                                             phy_join_request.mac_payload()
+                                            phy_join_request.mac_payload()
                                         {
                                             let newskey = derive_newskey(
                                                 &join_accept.app_nonce(),
@@ -211,13 +224,11 @@ fn run(opt: Opt) -> Result {
                                         }
                                     }
                                     break;
-
                                 }
                             } else {
                                 println!("Invalid MIC!");
                             }
                         }
-                        
                     }
                     MacPayload::Data(data) => println!("{:?}", data),
                 }
@@ -240,7 +251,7 @@ pub struct Device {
 pub fn load_devices(path: &str) -> Result<Option<Vec<Device>>> {
     if !Path::new(path).exists() {
         println!("No lorawan-devices.json found");
-        return Ok(None)
+        return Ok(None);
     }
 
     let contents = fs::read_to_string(path)?;
@@ -252,5 +263,4 @@ fn compare_bth_flipped(b: &[u8], hex_string: &String) -> Result<bool> {
     let hex_binary: Vec<u8> = hex::decode(hex_string)?.into_iter().rev().collect();
     let hex_ref: &[u8] = hex_binary.as_ref();
     Ok(b == hex_ref)
-
 }
