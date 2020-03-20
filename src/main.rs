@@ -1,3 +1,6 @@
+#[macro_use]
+extern crate serde_derive;
+extern crate serde_json;
 use semtech_udp;
 extern crate arrayref;
 use base64;
@@ -12,6 +15,9 @@ use std::process;
 
 const MINER: Token = Token(0);
 const RADIO: Token = Token(1);
+
+const DEVICES_PATH: &str = "lorawan-devices.json";
+
 
 #[derive(Debug, StructOpt)]
 #[structopt(name = "lorawan-sniffer", about = "lorawan sniffing utility")]
@@ -43,6 +49,17 @@ fn run(opt: Opt) -> Result {
     // send something so that server can know about us
     miner_socket.send(&[0])?;
 
+    let mut devices = {
+        let devices = load_devices(DEVICES_PATH)?;
+        let mut ret = Vec::new();
+        if let Some(devices) = devices {
+            for device in devices {
+                ret.push( (device, None) );
+            }
+        }
+        ret
+    };
+
     // we in turn put up our own server for the radio to connect to
     let radio_server = "0.0.0.0:1680".parse()?;
     let mut radio_socket = UdpSocket::bind(&radio_server)?;
@@ -67,9 +84,6 @@ fn run(opt: Opt) -> Result {
     // we will stash the client address here when we see it
     // warning: this approach only supports a single radio client
     let mut radio_client = None;
-
-    // we will stash join requests here as we will need them for deriving keys
-    let mut last_join_request = None;
 
     loop {
         poll.poll(&mut events, Some(Duration::from_millis(100)))?;
@@ -119,10 +133,9 @@ fn run(opt: Opt) -> Result {
                 _ => unreachable!(),
             }
 
-            // debug printing of packet
             for packet in packets {
                 print!("{:?}\t", packet.mhdr().mtype());
-                match packet.mac_payload() {
+                match &packet.mac_payload() {
                     MacPayload::JoinRequest(join_request) => {
                         println!(
                             "AppEui: {:x?} DevEui: {:x?} DevNonce: {:x?}",
@@ -130,67 +143,114 @@ fn run(opt: Opt) -> Result {
                             join_request.dev_eui().as_ref(),
                             join_request.dev_nonce().as_ref()
                         );
-                        last_join_request = Some(packet);
+
+                        for device in &mut devices {
+                            // compare bytes to hex string representation of bytes, flipped MSB
+                            let matches = if compare_bth_flipped(join_request.app_eui().as_ref(), &device.0.app_eui)? &&
+                            compare_bth_flipped(join_request.dev_eui().as_ref(), &device.0.dev_eui)?
+                             {
+                                device.1 = Some(GenericPhyPayload::new(packet.inner_ref().clone())?);
+                            };
+                        }
                     }
                     MacPayload::JoinAccept(_) => {
-                        let key = [
-                            0xEB, 0x31, 0xA2, 0x94, 0x00, 0x51, 0x7C, 0x53, 0x12, 0xCF, 0xBF, 0xD5,
-                            0xF5, 0x6F, 0x69, 0xC2,
-                        ];
-                        let app_key = keys::AES128(key);
-                        let decrypted_join_accept =
-                            GenericPhyPayload::<[u8; 17]>::new_decrypted_join_accept(
-                                packet.inner_ref().clone(),
-                                &app_key,
-                            )
-                            .unwrap();
 
-                        if decrypted_join_accept.validate_join_mic(&app_key).unwrap() {
-                            if let MacPayload::JoinAccept(join_accept) =
-                                decrypted_join_accept.mac_payload()
-                            {
-                                print!(
-                                    "\r\nAppNonce: {:x?} NetId: {:x?} DevAddr: {:x?}",
-                                    join_accept.app_nonce().as_ref(),
-                                    join_accept.net_id().as_ref(),
-                                    join_accept.dev_addr().as_ref(),
-                                );
-                                println!(
-                                    " DL Settings: {:x?} RxDelay: {:x?}",
-                                    join_accept.dl_settings(),
-                                    join_accept.rx_delay()
-                                );
 
-                                if let Some(packet) = &last_join_request {
-                                    if let MacPayload::JoinRequest(join_request) =
-                                        packet.mac_payload()
-                                    {
-                                        let newskey = derive_newskey(
-                                            &join_accept.app_nonce(),
-                                            &join_accept.net_id(),
-                                            &join_request.dev_nonce(),
-                                            &app_key,
-                                        );
+                        for device in &mut devices {
+                            let key_binary: Vec<u8> = hex::decode(device.0.app_key.clone())?;;
+                            let key: [u8; 16] = [
+                                key_binary[0], key_binary[1], key_binary[2], key_binary[3],
+                                key_binary[4], key_binary[5], key_binary[6], key_binary[7],
+                                key_binary[8], key_binary[9], key_binary[10], key_binary[11],
+                                key_binary[12], key_binary[13], key_binary[14], key_binary[15],
+                            ];
+                            let app_key = keys::AES128(key);
+                            let decrypted_join_accept =
+                                GenericPhyPayload::<[u8; 17]>::new_decrypted_join_accept(
+                                    packet.inner_ref().clone(),
+                                    &app_key,
+                                )
+                                .unwrap();
 
-                                        let appskey = derive_appskey(
-                                            &join_accept.app_nonce(),
-                                            &join_accept.net_id(),
-                                            &join_request.dev_nonce(),
-                                            &app_key,
-                                        );
+                            if decrypted_join_accept.validate_join_mic(&app_key).unwrap() {
+                                if let MacPayload::JoinAccept(join_accept) =
+                                    decrypted_join_accept.mac_payload()
+                                {
+                                    print!(
+                                        "\r\nAppNonce: {:x?} NetId: {:x?} DevAddr: {:x?}",
+                                        join_accept.app_nonce().as_ref(),
+                                        join_accept.net_id().as_ref(),
+                                        join_accept.dev_addr().as_ref(),
+                                    );
+                                    println!(
+                                        " DL Settings: {:x?} RxDelay: {:x?}",
+                                        join_accept.dl_settings(),
+                                        join_accept.rx_delay()
+                                    );
 
-                                        println!("newskey: {:x?}", newskey);
-                                        println!("appskey: {:x?}", appskey);
+                                    if let Some(phy_join_request) = &device.1 {
+                                        if let MacPayload::JoinRequest(join_request) =
+                                             phy_join_request.mac_payload()
+                                        {
+                                            let newskey = derive_newskey(
+                                                &join_accept.app_nonce(),
+                                                &join_accept.net_id(),
+                                                &join_request.dev_nonce(),
+                                                &app_key,
+                                            );
+
+                                            let appskey = derive_appskey(
+                                                &join_accept.app_nonce(),
+                                                &join_accept.net_id(),
+                                                &join_request.dev_nonce(),
+                                                &app_key,
+                                            );
+
+                                            println!("newskey: {:x?}", newskey);
+                                            println!("appskey: {:x?}", appskey);
+                                        }
                                     }
+                                    break;
+
                                 }
+                            } else {
+                                println!("Invalid MIC!");
                             }
-                        } else {
-                            println!("Invalid MIC!");
                         }
+                        
                     }
                     MacPayload::Data(data) => println!("{:?}", data),
                 }
             }
         }
     }
+}
+
+use std::fs;
+use std::io::{stdin, Write};
+use std::path::Path;
+
+#[derive(Clone, Deserialize, Serialize, Debug)]
+pub struct Device {
+    app_eui: String,
+    app_key: String,
+    dev_eui: String,
+}
+
+pub fn load_devices(path: &str) -> Result<Option<Vec<Device>>> {
+    if !Path::new(path).exists() {
+        println!("No lorawan-devices.json found");
+        return Ok(None)
+    }
+
+    let contents = fs::read_to_string(path)?;
+    let devices: Vec<Device> = serde_json::from_str(&contents)?;
+    Ok(Some(devices))
+}
+
+fn compare_bth_flipped(b: &[u8], hex_string: &String) -> Result<bool> {
+    let hex_binary: Vec<u8> = hex::decode(hex_string)?.into_iter().rev().collect();
+    let hex_ref: &[u8] = hex_binary.as_ref();
+    Ok(b == hex_ref)
+
 }
