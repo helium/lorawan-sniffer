@@ -12,6 +12,7 @@ use mio::{Events, Poll, PollOpt, Ready, Token};
 use std::process;
 use std::time::Duration;
 use structopt::StructOpt;
+use helium_console;
 
 const MINER: Token = Token(0);
 const RADIO: Token = Token(1);
@@ -25,20 +26,24 @@ struct Opt {
     /// (eg: 192.168.1.30:1681)
     #[structopt(short, long)]
     miner: String,
+    /// Optional API Key to populate devices from console
+    #[structopt(short, long)]
+    key: Option<String>,
 }
 
 pub type Result<T = ()> = std::result::Result<T, Box<dyn std::error::Error>>;
 
-fn main() -> Result<()> {
+#[tokio::main]
+async fn main() -> Result {
     let cli = Opt::from_args();
-    if let Err(e) = run(cli) {
+    if let Err(e) = run(cli).await {
         println!("error: {}", e);
         process::exit(1);
     }
     Ok(())
 }
 
-fn run(opt: Opt) -> Result {
+async fn run(opt: Opt) -> Result {
     // try to parse the CLI iput
     let miner_server = opt.miner.parse()?;
     let mut miner_socket = UdpSocket::bind(&"0.0.0.0:1681".parse()?)?;
@@ -48,11 +53,21 @@ fn run(opt: Opt) -> Result {
     miner_socket.send(&[0])?;
 
     let mut devices = {
-        let devices = load_devices(DEVICES_PATH)?;
         let mut ret = Vec::new();
-        if let Some(devices) = devices {
+
+        if let Some(key) = opt.key {
+            let config = helium_console::client::Config::new(key);
+            let client = helium_console::client::Client::new(config)?;
+            let devices = client.get_devices().await?;
             for device in devices {
-                ret.push((device, None));
+                ret.push( (Device::from_console_device(device), None) )
+            }
+        } else {
+            let devices = load_devices(DEVICES_PATH)?;
+            if let Some(devices) = devices {
+                for device in devices {
+                    ret.push((device, None));
+                }
             }
         }
         ret
@@ -144,7 +159,7 @@ fn run(opt: Opt) -> Result {
 
                         for device in &mut devices {
                             // compare bytes to hex string representation of bytes, flipped MSB
-                            let matches = if compare_bth_flipped(
+                            if compare_bth_flipped(
                                 join_request.app_eui().as_ref(),
                                 &device.0.app_eui,
                             )? && compare_bth_flipped(
@@ -153,7 +168,7 @@ fn run(opt: Opt) -> Result {
                             )? {
                                 device.1 =
                                     Some(GenericPhyPayload::new(packet.inner_ref().clone())?);
-                            };
+                            }
                         }
                     }
                     MacPayload::JoinAccept(_) => {
@@ -225,8 +240,6 @@ fn run(opt: Opt) -> Result {
                                     }
                                     break;
                                 }
-                            } else {
-                                println!("Invalid MIC!");
                             }
                         }
                     }
@@ -238,7 +251,6 @@ fn run(opt: Opt) -> Result {
 }
 
 use std::fs;
-use std::io::{stdin, Write};
 use std::path::Path;
 
 #[derive(Clone, Deserialize, Serialize, Debug)]
@@ -246,6 +258,17 @@ pub struct Device {
     app_eui: String,
     app_key: String,
     dev_eui: String,
+}
+
+
+impl Device {
+    fn from_console_device(device: helium_console::Device) -> Device {
+        Device {
+            app_eui: device.app_eui().clone(),
+            app_key: device.app_key().clone(),
+            dev_eui: device.dev_eui().clone(),
+        }
+    }
 }
 
 pub fn load_devices(path: &str) -> Result<Option<Vec<Device>>> {

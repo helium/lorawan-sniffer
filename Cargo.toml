@@ -5,9 +5,12 @@ authors = ["lthiery <me@louisthiery.com>"]
 edition = "2018"
 
 [dependencies]
+tokio = { version = "0.2", features = ["full"] }
 structopt = { version = "0.3.2", default-features = false }
 arrayref = "0.3"
 lorawan = { git = "https://github.com/lthiery/rust-lorawan", branch = "lthiery/derive-session-keys"}
+#helium-console = { git = "https://github.com/helium/helium-console-cli" }
+helium-console = { path = "../helium-console-cli/lib" }
 semtech-udp = { git = "https://github.com/lthiery/semtech-udp"}
 base64 = "0.12.0"
 mio = "0.6"
