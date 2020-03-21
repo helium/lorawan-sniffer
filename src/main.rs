@@ -33,6 +33,40 @@ struct Opt {
 
 pub type Result<T = ()> = std::result::Result<T, Box<dyn std::error::Error>>;
 
+struct DevAddr([u8;4]);
+
+impl DevAddr {
+    fn copy_from_parser(src: &[u8]) -> DevAddr {
+        let mut dst = [0u8; 4];
+        dst.iter_mut().zip(src).map(|(x, y)| *x = *y);
+        DevAddr(dst)
+    }
+}
+
+struct Session {
+    newskey: keys::AES128,
+    appskey: keys::AES128,
+    devaddr: DevAddr,
+}
+
+
+
+struct Device {
+    credentials: Credentials,
+    last_join_request: Option<GenericPhyPayload<Vec<u8>>>,
+    session: Option<Session>,
+}
+
+impl Device {
+    fn new(credentials: Credentials) -> Device {
+        Device {
+            credentials,
+            last_join_request: None,
+            session: None,
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result {
     let cli = Opt::from_args();
@@ -59,14 +93,15 @@ async fn run(opt: Opt) -> Result {
             let config = helium_console::client::Config::new(key);
             let client = helium_console::client::Client::new(config)?;
             let devices = client.get_devices().await?;
-            for device in devices {
-                ret.push( (Device::from_console_device(device), None) )
+            for console_device in devices {
+                let credentials = Credentials::from_console_device(console_device);
+                ret.push( Device::new(credentials) )
             }
         } else {
-            let devices = load_devices(DEVICES_PATH)?;
-            if let Some(devices) = devices {
-                for device in devices {
-                    ret.push((device, None));
+            let creds = load_credentials(DEVICES_PATH)?;
+            if let Some(creds) = creds {
+                for credentials in creds {
+                    ret.push( Device::new(credentials) )
                 }
             }
         }
@@ -115,13 +150,13 @@ async fn run(opt: Opt) -> Result {
                     match msg.data() {
                         semtech_udp::PacketData::PullResp(data) => {
                             let bytes = base64::decode(data.txpk.data.clone()).unwrap();
-                            packets.push(lorawan::parser::GenericPhyPayload::new(bytes)?);
+                            packets.push(GenericPhyPayload::new(bytes)?);
                         }
                         semtech_udp::PacketData::PushData(data) => {
                             if let Some(rxpks) = &data.rxpk {
                                 for rxpk in rxpks {
                                     let bytes = base64::decode(rxpk.data.clone()).unwrap();
-                                    packets.push(lorawan::parser::GenericPhyPayload::new(bytes)?)
+                                    packets.push(GenericPhyPayload::new(bytes)?)
                                 }
                             }
                         }
@@ -138,7 +173,7 @@ async fn run(opt: Opt) -> Result {
                         if let Some(rxpks) = &data.rxpk {
                             for rxpk in rxpks {
                                 let bytes = base64::decode(rxpk.data.clone()).unwrap();
-                                packets.push(lorawan::parser::GenericPhyPayload::new(bytes)?)
+                                packets.push(GenericPhyPayload::new(bytes)?)
                             }
                         }
                     }
@@ -161,38 +196,19 @@ async fn run(opt: Opt) -> Result {
                             // compare bytes to hex string representation of bytes, flipped MSB
                             if compare_bth_flipped(
                                 join_request.app_eui().as_ref(),
-                                &device.0.app_eui,
+                                &device.credentials.app_eui,
                             )? && compare_bth_flipped(
                                 join_request.dev_eui().as_ref(),
-                                &device.0.dev_eui,
+                                &device.credentials.dev_eui,
                             )? {
-                                device.1 =
+                                device.last_join_request =
                                     Some(GenericPhyPayload::new(packet.inner_ref().clone())?);
                             }
                         }
                     }
                     MacPayload::JoinAccept(_) => {
                         for device in &mut devices {
-                            let key_binary: Vec<u8> = hex::decode(device.0.app_key.clone())?;
-                            let key: [u8; 16] = [
-                                key_binary[0],
-                                key_binary[1],
-                                key_binary[2],
-                                key_binary[3],
-                                key_binary[4],
-                                key_binary[5],
-                                key_binary[6],
-                                key_binary[7],
-                                key_binary[8],
-                                key_binary[9],
-                                key_binary[10],
-                                key_binary[11],
-                                key_binary[12],
-                                key_binary[13],
-                                key_binary[14],
-                                key_binary[15],
-                            ];
-                            let app_key = keys::AES128(key);
+                            let app_key = key_as_string_to_aes128(&device.credentials.app_key)?;
                             let decrypted_join_accept =
                                 GenericPhyPayload::<[u8; 17]>::new_decrypted_join_accept(
                                     packet.inner_ref().clone(),
@@ -200,6 +216,9 @@ async fn run(opt: Opt) -> Result {
                                 )
                                 .unwrap();
 
+
+                            // If the MIC works, then we have matched a previous join request
+                            // join response and we can now derive and save session keys
                             if decrypted_join_accept.validate_join_mic(&app_key).unwrap() {
                                 if let MacPayload::JoinAccept(join_accept) =
                                     decrypted_join_accept.mac_payload()
@@ -216,7 +235,7 @@ async fn run(opt: Opt) -> Result {
                                         join_accept.rx_delay()
                                     );
 
-                                    if let Some(phy_join_request) = &device.1 {
+                                    if let Some(phy_join_request) = &device.last_join_request {
                                         if let MacPayload::JoinRequest(join_request) =
                                             phy_join_request.mac_payload()
                                         {
@@ -236,6 +255,13 @@ async fn run(opt: Opt) -> Result {
 
                                             println!("newskey: {:x?}", newskey);
                                             println!("appskey: {:x?}", appskey);
+
+                                            device.session = Some(Session {
+                                                newskey,
+                                                appskey,
+                                                devaddr: DevAddr::copy_from_parser(join_accept.dev_addr().as_ref()),
+                                            });
+
                                         }
                                     }
                                     break;
@@ -243,7 +269,10 @@ async fn run(opt: Opt) -> Result {
                             }
                         }
                     }
-                    MacPayload::Data(data) => println!("{:?}", data),
+                    MacPayload::Data(data) => {
+                        
+                        println!("{:?}", data)
+                    },
                 }
             }
         }
@@ -254,16 +283,16 @@ use std::fs;
 use std::path::Path;
 
 #[derive(Clone, Deserialize, Serialize, Debug)]
-pub struct Device {
+pub struct Credentials {
     app_eui: String,
     app_key: String,
     dev_eui: String,
 }
 
 
-impl Device {
-    fn from_console_device(device: helium_console::Device) -> Device {
-        Device {
+impl Credentials {
+    fn from_console_device(device: helium_console::Device) -> Credentials {
+        Credentials {
             app_eui: device.app_eui().clone(),
             app_key: device.app_key().clone(),
             dev_eui: device.dev_eui().clone(),
@@ -271,14 +300,14 @@ impl Device {
     }
 }
 
-pub fn load_devices(path: &str) -> Result<Option<Vec<Device>>> {
+pub fn load_credentials(path: &str) -> Result<Option<Vec<Credentials>>> {
     if !Path::new(path).exists() {
         println!("No lorawan-devices.json found");
         return Ok(None);
     }
 
     let contents = fs::read_to_string(path)?;
-    let devices: Vec<Device> = serde_json::from_str(&contents)?;
+    let devices: Vec<Credentials> = serde_json::from_str(&contents)?;
     Ok(Some(devices))
 }
 
@@ -286,4 +315,28 @@ fn compare_bth_flipped(b: &[u8], hex_string: &String) -> Result<bool> {
     let hex_binary: Vec<u8> = hex::decode(hex_string)?.into_iter().rev().collect();
     let hex_ref: &[u8] = hex_binary.as_ref();
     Ok(b == hex_ref)
+}
+
+fn key_as_string_to_aes128(input: &String) -> Result<keys::AES128> {
+    let app_key = input.clone();
+    let key_binary: Vec<u8> = hex::decode(app_key)?;
+    let key: [u8; 16] = [
+        key_binary[0],
+        key_binary[1],
+        key_binary[2],
+        key_binary[3],
+        key_binary[4],
+        key_binary[5],
+        key_binary[6],
+        key_binary[7],
+        key_binary[8],
+        key_binary[9],
+        key_binary[10],
+        key_binary[11],
+        key_binary[12],
+        key_binary[13],
+        key_binary[14],
+        key_binary[15],
+    ];
+    Ok(keys::AES128(key))
 }
