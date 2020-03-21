@@ -33,12 +33,15 @@ struct Opt {
 
 pub type Result<T = ()> = std::result::Result<T, Box<dyn std::error::Error>>;
 
+#[derive(PartialEq)]
 struct DevAddr([u8;4]);
 
 impl DevAddr {
-    fn copy_from_parser(src: &[u8]) -> DevAddr {
+    fn copy_from_parser(src: &lorawan::parser::DevAddr) -> DevAddr {
         let mut dst = [0u8; 4];
-        dst.iter_mut().zip(src).map(|(x, y)| *x = *y);
+        for (d, s) in dst.iter_mut().zip(src.as_ref().iter()) {
+            *d = *s;
+        }
         DevAddr(dst)
     }
 }
@@ -216,21 +219,20 @@ async fn run(opt: Opt) -> Result {
                                 )
                                 .unwrap();
 
-
                             // If the MIC works, then we have matched a previous join request
                             // join response and we can now derive and save session keys
                             if decrypted_join_accept.validate_join_mic(&app_key).unwrap() {
                                 if let MacPayload::JoinAccept(join_accept) =
                                     decrypted_join_accept.mac_payload()
                                 {
-                                    print!(
-                                        "\r\nAppNonce: {:x?} NetId: {:x?} DevAddr: {:x?}",
+                                    println!(
+                                        "AppNonce: {:x?} NetId: {:x?} DevAddr: {:x?}",
                                         join_accept.app_nonce().as_ref(),
                                         join_accept.net_id().as_ref(),
                                         join_accept.dev_addr().as_ref(),
                                     );
                                     println!(
-                                        " DL Settings: {:x?} RxDelay: {:x?}",
+                                        "\t\tDL Settings: {:x?} RxDelay: {:x?}",
                                         join_accept.dl_settings(),
                                         join_accept.rx_delay()
                                     );
@@ -253,13 +255,14 @@ async fn run(opt: Opt) -> Result {
                                                 &app_key,
                                             );
 
-                                            println!("newskey: {:x?}", newskey);
-                                            println!("appskey: {:x?}", appskey);
+
+                                            println!("\t\tNewskey: {:x?}", newskey);
+                                            println!("\t\tAppskey: {:x?}", appskey);
 
                                             device.session = Some(Session {
                                                 newskey,
                                                 appskey,
-                                                devaddr: DevAddr::copy_from_parser(join_accept.dev_addr().as_ref()),
+                                                devaddr: DevAddr::copy_from_parser(&join_accept.dev_addr()),
                                             });
 
                                         }
@@ -270,8 +273,57 @@ async fn run(opt: Opt) -> Result {
                         }
                     }
                     MacPayload::Data(data) => {
-                        
-                        println!("{:?}", data)
+                        // print header
+                        let fhdr = data.fhdr();
+                        print!("{:x?}, {:x?}, FCnt({:x?})",
+                            fhdr.dev_addr(),
+                            fhdr.fctrl(),
+                            fhdr.fcnt(),
+                        );
+
+                        // if there is some FPort => encrypted payload
+                        // iterate through our devices until we find a match
+                        if let Some(fport) = data.f_port() {
+                            println!(", FPort({:?}), ", fport);
+                            let devaddr = DevAddr::copy_from_parser(&fhdr.dev_addr());
+                            for (index, device) in devices.iter().enumerate() {
+                                
+                                // if there is a live session, check for address match
+                                if let Some(session) = &device.session {
+                                    if session.devaddr == devaddr {
+                                        let payload = packet.decrypted_payload(
+                                            // depending on FPort, 
+                                            // we use newskey os appskey
+                                            if fport == 0 {
+                                                &session.newskey
+                                            } else {
+                                                &session.appskey
+                                            },
+                                            fhdr.fcnt() as u32
+                                        )?;
+                                        println!("\t\t\tDecryptedData({:x?})", payload);
+                                        break;
+                                    }
+                                }
+                                // if we are on the last item, print the enrypted data
+                                if index == devices.len()-1 {
+                                    println!(
+                                        "\t\t\tEncryptedData({:x?})",
+                                        data.encrypted_frm_payload().as_ref(),
+                                    );
+                                }
+                            }
+                        } else {
+                            // insert newline if there is no FPort
+                            println!("");
+                        }
+
+                        let fopts = fhdr.fopts()?;
+                        if fopts.len() > 0 {
+                            println!("\t\t\t{:x?}",
+                                fopts,
+                            );
+                        }
                     },
                 }
             }
