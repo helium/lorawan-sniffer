@@ -4,6 +4,7 @@ extern crate serde_json;
 use semtech_udp;
 extern crate arrayref;
 use base64;
+use helium_console;
 use lorawan;
 use lorawan::keys;
 use lorawan::parser::{derive_appskey, derive_newskey, GenericPhyPayload, MacPayload};
@@ -12,7 +13,6 @@ use mio::{Events, Poll, PollOpt, Ready, Token};
 use std::process;
 use std::time::Duration;
 use structopt::StructOpt;
-use helium_console;
 
 const MINER: Token = Token(0);
 const RADIO: Token = Token(1);
@@ -34,7 +34,7 @@ struct Opt {
 pub type Result<T = ()> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 #[derive(PartialEq)]
-struct DevAddr([u8;4]);
+struct DevAddr([u8; 4]);
 
 impl DevAddr {
     fn copy_from_parser(src: &lorawan::parser::DevAddr) -> DevAddr {
@@ -51,8 +51,6 @@ struct Session {
     appskey: keys::AES128,
     devaddr: DevAddr,
 }
-
-
 
 struct Device {
     credentials: Credentials,
@@ -98,13 +96,13 @@ async fn run(opt: Opt) -> Result {
             let devices = client.get_devices().await?;
             for console_device in devices {
                 let credentials = Credentials::from_console_device(console_device);
-                ret.push( Device::new(credentials) )
+                ret.push(Device::new(credentials))
             }
         } else {
             let creds = load_credentials(DEVICES_PATH)?;
             if let Some(creds) = creds {
                 for credentials in creds {
-                    ret.push( Device::new(credentials) )
+                    ret.push(Device::new(credentials))
                 }
             }
         }
@@ -255,16 +253,16 @@ async fn run(opt: Opt) -> Result {
                                                 &app_key,
                                             );
 
-
                                             println!("\t\tNewskey: {:x?}", newskey);
                                             println!("\t\tAppskey: {:x?}", appskey);
 
                                             device.session = Some(Session {
                                                 newskey,
                                                 appskey,
-                                                devaddr: DevAddr::copy_from_parser(&join_accept.dev_addr()),
+                                                devaddr: DevAddr::copy_from_parser(
+                                                    &join_accept.dev_addr(),
+                                                ),
                                             });
-
                                         }
                                     }
                                     break;
@@ -275,7 +273,8 @@ async fn run(opt: Opt) -> Result {
                     MacPayload::Data(data) => {
                         // print header
                         let fhdr = data.fhdr();
-                        print!("{:x?}, {:x?}, FCnt({:x?})",
+                        print!(
+                            "{:x?}, {:x?}, FCnt({:x?})",
                             fhdr.dev_addr(),
                             fhdr.fctrl(),
                             fhdr.fcnt(),
@@ -287,26 +286,25 @@ async fn run(opt: Opt) -> Result {
                             println!(", FPort({:?}), ", fport);
                             let devaddr = DevAddr::copy_from_parser(&fhdr.dev_addr());
                             for (index, device) in devices.iter().enumerate() {
-                                
                                 // if there is a live session, check for address match
                                 if let Some(session) = &device.session {
                                     if session.devaddr == devaddr {
                                         let payload = packet.decrypted_payload(
-                                            // depending on FPort, 
+                                            // depending on FPort,
                                             // we use newskey os appskey
                                             if fport == 0 {
                                                 &session.newskey
                                             } else {
                                                 &session.appskey
                                             },
-                                            fhdr.fcnt() as u32
+                                            fhdr.fcnt() as u32,
                                         )?;
                                         println!("\t\t\tDecryptedData({:x?})", payload);
                                         break;
                                     }
                                 }
                                 // if we are on the last item, print the enrypted data
-                                if index == devices.len()-1 {
+                                if index == devices.len() - 1 {
                                     println!(
                                         "\t\t\tEncryptedData({:x?})",
                                         data.encrypted_frm_payload().as_ref(),
@@ -320,11 +318,9 @@ async fn run(opt: Opt) -> Result {
 
                         let fopts = fhdr.fopts()?;
                         if fopts.len() > 0 {
-                            println!("\t\t\t{:x?}",
-                                fopts,
-                            );
+                            println!("\t\t\t{:x?}", fopts,);
                         }
-                    },
+                    }
                 }
             }
         }
@@ -340,7 +336,6 @@ pub struct Credentials {
     app_key: String,
     dev_eui: String,
 }
-
 
 impl Credentials {
     fn from_console_device(device: helium_console::Device) -> Credentials {
