@@ -1,17 +1,17 @@
-#[macro_use]
-extern crate serde_derive;
-extern crate serde_json;
-use semtech_udp;
-extern crate arrayref;
 use base64;
 use helium_console;
 use lorawan;
-use lorawan::keys;
-use lorawan::parser::{derive_appskey, derive_newskey, GenericPhyPayload, MacPayload};
-use mio::net::UdpSocket;
-use mio::{Events, Poll, PollOpt, Ready, Token};
-use std::process;
-use std::time::Duration;
+use lorawan::{
+    keys,
+    parser::{derive_appskey, derive_newskey, GenericPhyPayload, MacPayload},
+};
+use mio::{
+    net::UdpSocket,
+    {Events, Poll, PollOpt, Ready, Token},
+};
+use semtech_udp;
+use serde_derive::{Deserialize, Serialize};
+use std::{process, time::Duration};
 use structopt::StructOpt;
 
 const MINER: Token = Token(0);

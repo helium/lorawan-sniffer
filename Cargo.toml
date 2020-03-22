@@ -7,14 +7,12 @@ edition = "2018"
 [dependencies]
 tokio = { version = "0.2", features = ["full"] }
 structopt = { version = "0.3.2", default-features = false }
-arrayref = "0.3"
 lorawan = { git = "https://github.com/lthiery/rust-lorawan", branch = "lthiery/derive-session-keys"}
 helium-console = { git = "https://github.com/helium/helium-console-cli" }
 semtech-udp = { git = "https://github.com/helium/semtech-udp"}
 base64 = "0.12.0"
 mio = "0.6"
 aes = "0.3.2"
-openssl = "0.10.28"
 serde =  "1"
 serde_derive = "1"
 serde_json = "1"
