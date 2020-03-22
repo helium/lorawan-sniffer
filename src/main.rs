@@ -18,6 +18,7 @@ const MINER: Token = Token(0);
 const RADIO: Token = Token(1);
 
 const DEVICES_PATH: &str = "lorawan-devices.json";
+const CONFIG_PATH: &str = ".helium-console-config.toml";
 
 #[derive(Debug, StructOpt)]
 #[structopt(name = "lorawan-sniffer", about = "lorawan sniffing utility")]
@@ -28,7 +29,7 @@ struct Opt {
     miner: String,
     /// Optional API Key to populate devices from console
     #[structopt(short, long)]
-    key: Option<String>,
+    key: bool,
 }
 
 pub type Result<T = ()> = std::result::Result<T, Box<dyn std::error::Error>>;
@@ -78,6 +79,8 @@ async fn main() -> Result {
     Ok(())
 }
 
+mod config;
+
 async fn run(opt: Opt) -> Result {
     // try to parse the CLI iput
     let miner_server = opt.miner.parse()?;
@@ -90,8 +93,8 @@ async fn run(opt: Opt) -> Result {
     let mut devices = {
         let mut ret = Vec::new();
 
-        if let Some(key) = opt.key {
-            let config = helium_console::client::Config::new(key);
+        if opt.key {
+            let config = config::load(CONFIG_PATH)?;
             let client = helium_console::client::Client::new(config)?;
             let devices = client.get_devices().await?;
             for console_device in devices {
@@ -136,7 +139,9 @@ async fn run(opt: Opt) -> Result {
 
     loop {
         poll.poll(&mut events, Some(Duration::from_millis(100)))?;
+
         for event in events.iter() {
+            // handle the UDP events and collect packets for processing
             let mut packets = Vec::new();
             match event.token() {
                 MINER => {
@@ -182,6 +187,8 @@ async fn run(opt: Opt) -> Result {
                 _ => unreachable!(),
             }
 
+            // process all the packets, including tracking Join/JoinAccept,
+            // deriving session keys, and decrypting packets when possible
             for packet in packets {
                 print!("{:?}\t", packet.mhdr().mtype());
                 match &packet.mac_payload() {
@@ -271,7 +278,6 @@ async fn run(opt: Opt) -> Result {
                         }
                     }
                     MacPayload::Data(data) => {
-                        // print header
                         let fhdr = data.fhdr();
                         print!(
                             "{:x?}, {:x?}, FCnt({:x?})",
@@ -281,7 +287,7 @@ async fn run(opt: Opt) -> Result {
                         );
 
                         // if there is some FPort => encrypted payload
-                        // iterate through our devices until we find a match
+                        // iterate through our devices until we find a DevAddr match
                         if let Some(fport) = data.f_port() {
                             println!(", FPort({:?}), ", fport);
                             let devaddr = DevAddr::copy_from_parser(&fhdr.dev_addr());
@@ -303,7 +309,7 @@ async fn run(opt: Opt) -> Result {
                                         break;
                                     }
                                 }
-                                // if we are on the last item, print the enrypted data
+                                // if we are on the last item, we could not decrypt
                                 if index == devices.len() - 1 {
                                     println!(
                                         "\t\t\tEncryptedData({:x?})",
@@ -312,7 +318,6 @@ async fn run(opt: Opt) -> Result {
                                 }
                             }
                         } else {
-                            // insert newline if there is no FPort
                             println!("");
                         }
 
