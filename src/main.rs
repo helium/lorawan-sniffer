@@ -194,10 +194,10 @@ async fn run(opt: Opt) -> Result {
                 match &packet.mac_payload() {
                     MacPayload::JoinRequest(join_request) => {
                         println!(
-                            "AppEui: {:x?} DevEui: {:x?} DevNonce: {:x?}",
-                            join_request.app_eui().as_ref(),
-                            join_request.dev_eui().as_ref(),
-                            join_request.dev_nonce().as_ref()
+                            "AppEui: {:} DevEui: {:} DevNonce: {:}",
+                            hex_encode_reversed(join_request.app_eui().as_ref()),
+                            hex_encode_reversed(join_request.dev_eui().as_ref()),
+                            hex_encode_reversed(join_request.dev_nonce().as_ref())
                         );
 
                         for device in &mut devices {
@@ -231,10 +231,10 @@ async fn run(opt: Opt) -> Result {
                                     decrypted_join_accept.mac_payload()
                                 {
                                     println!(
-                                        "AppNonce: {:x?} NetId: {:x?} DevAddr: {:x?}",
-                                        join_accept.app_nonce().as_ref(),
-                                        join_accept.net_id().as_ref(),
-                                        join_accept.dev_addr().as_ref(),
+                                        "AppNonce: {:} NetId: {:} DevAddr: {:}",
+                                        hex_encode_reversed(join_accept.app_nonce().as_ref()),
+                                        hex_encode_reversed(join_accept.net_id().as_ref()),
+                                        hex_encode_reversed(join_accept.dev_addr().as_ref()),
                                     );
                                     println!(
                                         "\t\tDL Settings: {:x?} RxDelay: {:x?}",
@@ -260,8 +260,8 @@ async fn run(opt: Opt) -> Result {
                                                 &app_key,
                                             );
 
-                                            println!("\t\tNewskey: {:x?}", newskey);
-                                            println!("\t\tAppskey: {:x?}", appskey);
+                                            println!("\t\tNewskey: {:X?}", newskey);
+                                            println!("\t\tAppskey: {:X?}", appskey);
 
                                             device.session = Some(Session {
                                                 newskey,
@@ -340,6 +340,13 @@ pub struct Credentials {
     app_eui: String,
     app_key: String,
     dev_eui: String,
+}
+
+fn hex_encode_reversed(arr: &[u8]) -> String {
+    let mut copy = Vec::new();
+    copy.extend_from_slice(arr);
+    copy.reverse();
+    hex::encode(copy).to_uppercase()
 }
 
 impl Credentials {
