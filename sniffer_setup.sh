@@ -31,11 +31,9 @@ ssh-keyscan $HotspotIP  >> ~/.ssh/known_hosts
 
 # ssh in and reconfigure a few things
 sshpass -p $HotspotPW ssh helium@$HotspotIP \
-    "(sudo sv d /etc/sv/lora_pkt_fwd_sx1301; \
-    sudo sv d /etc/sv/miner; \
-    sudo sed -i 's/\"freq\": 912300000/\"freq\": 905900000/' /etc/lorawan/sx1301/global_conf.json;\
+    "(sudo sed -i 's/\"freq\": 912300000/\"freq\": 905900000/' /etc/lorawan/sx1301/global_conf.json;\
     sudo sed -i 's/\"freq\": 913000000/\"freq\": 906600000/' /etc/lorawan/sx1301/global_conf.json;\
     sudo sed -i '/{use_ebus, true},/ a \ \ \ {radio_mirror_port, 1681},' /opt/miner/releases/0.1.0/sys.config;\
-    sudo sv u /etc/sv/lora_pkt_fwd_sx1301; \
-    sudo sv u /etc/sv/miner; \
+    sudo sv x /etc/sv/lora_pkt_fwd_sx1301; \
+    sudo sv x /etc/sv/miner; \
     exit)"
