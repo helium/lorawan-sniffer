@@ -316,7 +316,7 @@ dependencies = [
 [[package]]
 name = "helium-console"
 version = "0.1.5"
-source = "git+https://github.com/helium/helium-console-cli#68322a45a343d964086b6b216582192a9a6ed4e4"
+source = "git+https://github.com/helium/helium-console-cli#9c30c38d0913bde4ba184314b28a04c70dd12bed"
 dependencies = [
  "base64 0.11.0",
  "hex",
@@ -764,9 +764,9 @@ dependencies = [
 
 [[package]]
 name = "proc-macro-error"
-version = "0.4.11"
+version = "0.4.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e7959c6467d962050d639361f7703b2051c43036d03493c36f01d440fdd3138a"
+checksum = "18f33027081eba0a6d8aba6d1b1c3a3be58cbb12106341c2d5759fcd9b5277e7"
 dependencies = [
  "proc-macro-error-attr",
  "proc-macro2",
@@ -777,9 +777,9 @@ dependencies = [
 
 [[package]]
 name = "proc-macro-error-attr"
-version = "0.4.11"
+version = "0.4.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e4002d9f55991d5e019fb940a90e1a95eb80c24e77cb2462dd4dc869604d543a"
+checksum = "8a5b4b77fdb63c1eca72173d68d24501c54ab1269409f6b672c85deb18af69de"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -939,7 +939,7 @@ dependencies = [
 [[package]]
 name = "semtech-udp"
 version = "0.1.0"
-source = "git+https://github.com/helium/semtech-udp#62498886e14765510362841c79c458f669fa9403"
+source = "git+https://github.com/helium/semtech-udp#0f59b359192244fbbc983bc1840bf07042656904"
 dependencies = [
  "arrayref",
  "num_enum",

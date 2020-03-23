@@ -26,10 +26,10 @@ struct Opt {
     /// IP address and port of miner mirror port
     /// (eg: 192.168.1.30:1681)
     #[structopt(short, long)]
-    miner: String,
+    host: String,
     /// Optional API Key to populate devices from console
     #[structopt(short, long)]
-    key: bool,
+    console: bool,
 }
 
 pub type Result<T = ()> = std::result::Result<T, Box<dyn std::error::Error>>;
@@ -81,9 +81,64 @@ async fn main() -> Result {
 
 mod config;
 
+enum Pkt<'a> {
+    Up(&'a semtech_udp::RxPk),
+    Down(&'a semtech_udp::TxPk),
+}
+
+struct SniffedPacket {
+    payload: GenericPhyPayload<Vec<u8>>,
+    freq: f64,
+    datr: String,
+    direction: Direction,
+}
+
+enum Direction {
+    Up(RxRf),
+    Down,
+}
+
+struct RxRf {
+    lsnr: f64,
+    rssi: i64,
+}
+
+impl SniffedPacket {
+    fn new(pkt: Pkt) -> Result<SniffedPacket> {
+        let data = match pkt {
+            Pkt::Up(rxpk) => rxpk.data.clone(),
+            Pkt::Down(txpk) => txpk.data.clone(),
+        };
+        let bytes = base64::decode(data).unwrap();
+
+        let (datr, freq, direction) = match pkt {
+            Pkt::Up(rxpk) => (
+                rxpk.datr.clone(),
+                rxpk.freq,
+                Direction::Up(RxRf {
+                    lsnr: rxpk.lsnr,
+                    rssi: rxpk.rssi,
+                }),
+            ),
+            Pkt::Down(txpk) => (txpk.datr.clone(), txpk.freq, Direction::Down),
+        };
+
+        Ok(SniffedPacket {
+            payload: GenericPhyPayload::new(bytes)?,
+            freq,
+            datr,
+            direction,
+        })
+    }
+
+    fn payload(&self) -> &GenericPhyPayload<Vec<u8>> {
+        &self.payload
+    }
+}
+
 async fn run(opt: Opt) -> Result {
     // try to parse the CLI iput
-    let miner_server = opt.miner.parse()?;
+    let miner_server = opt.host.parse()?;
     let mut miner_socket = UdpSocket::bind(&"0.0.0.0:1681".parse()?)?;
     // "connecting" filters for only frames from the server
     miner_socket.connect(miner_server)?;
@@ -93,7 +148,7 @@ async fn run(opt: Opt) -> Result {
     let mut devices = {
         let mut ret = Vec::new();
 
-        if opt.key {
+        if opt.console {
             let config = config::load(CONFIG_PATH)?;
             let client = helium_console::client::Client::new(config)?;
             let devices = client.get_devices().await?;
@@ -142,7 +197,7 @@ async fn run(opt: Opt) -> Result {
 
         for event in events.iter() {
             // handle the UDP events and collect packets for processing
-            let mut packets = Vec::new();
+            let mut packets: Vec<SniffedPacket> = Vec::new();
             match event.token() {
                 MINER => {
                     let num_recv = miner_socket.recv(&mut buffer)?;
@@ -155,14 +210,12 @@ async fn run(opt: Opt) -> Result {
 
                     match msg.data() {
                         semtech_udp::PacketData::PullResp(data) => {
-                            let bytes = base64::decode(data.txpk.data.clone()).unwrap();
-                            packets.push(GenericPhyPayload::new(bytes)?);
+                            packets.push(SniffedPacket::new(Pkt::Down(&data.txpk))?)
                         }
                         semtech_udp::PacketData::PushData(data) => {
                             if let Some(rxpks) = &data.rxpk {
                                 for rxpk in rxpks {
-                                    let bytes = base64::decode(rxpk.data.clone()).unwrap();
-                                    packets.push(GenericPhyPayload::new(bytes)?)
+                                    packets.push(SniffedPacket::new(Pkt::Up(rxpk))?)
                                 }
                             }
                         }
@@ -178,8 +231,7 @@ async fn run(opt: Opt) -> Result {
                     if let semtech_udp::PacketData::PushData(data) = msg.data() {
                         if let Some(rxpks) = &data.rxpk {
                             for rxpk in rxpks {
-                                let bytes = base64::decode(rxpk.data.clone()).unwrap();
-                                packets.push(GenericPhyPayload::new(bytes)?)
+                                packets.push(SniffedPacket::new(Pkt::Up(rxpk))?)
                             }
                         }
                     }
@@ -190,11 +242,22 @@ async fn run(opt: Opt) -> Result {
             // process all the packets, including tracking Join/JoinAccept,
             // deriving session keys, and decrypting packets when possible
             for packet in packets {
-                print!("{:?}\t", packet.mhdr().mtype());
-                match &packet.mac_payload() {
+                print!(
+                    "{:?}\t{:.1} MHz \t{:}",
+                    packet.payload().mhdr().mtype(),
+                    packet.freq,
+                    packet.datr
+                );
+
+                match &packet.direction {
+                    Direction::Up(data) => println!("\tRSSI: {:}\tLSNR: {:}", data.rssi, data.lsnr),
+                    Direction::Down => println!(""),
+                }
+
+                match &packet.payload().mac_payload() {
                     MacPayload::JoinRequest(join_request) => {
                         println!(
-                            "AppEui: {:} DevEui: {:} DevNonce: {:}",
+                            "\tAppEui: {:} DevEui: {:} DevNonce: {:}",
                             hex_encode_reversed(join_request.app_eui().as_ref()),
                             hex_encode_reversed(join_request.dev_eui().as_ref()),
                             hex_encode_reversed(join_request.dev_nonce().as_ref())
@@ -209,8 +272,9 @@ async fn run(opt: Opt) -> Result {
                                 join_request.dev_eui().as_ref(),
                                 &device.credentials.dev_eui,
                             )? {
-                                device.last_join_request =
-                                    Some(GenericPhyPayload::new(packet.inner_ref().clone())?);
+                                device.last_join_request = Some(GenericPhyPayload::new(
+                                    packet.payload().inner_ref().clone(),
+                                )?);
                             }
                         }
                     }
@@ -219,7 +283,7 @@ async fn run(opt: Opt) -> Result {
                             let app_key = key_as_string_to_aes128(&device.credentials.app_key)?;
                             let decrypted_join_accept =
                                 GenericPhyPayload::<[u8; 17]>::new_decrypted_join_accept(
-                                    packet.inner_ref().clone(),
+                                    packet.payload().inner_ref().clone(),
                                     &app_key,
                                 )
                                 .unwrap();
@@ -231,13 +295,13 @@ async fn run(opt: Opt) -> Result {
                                     decrypted_join_accept.mac_payload()
                                 {
                                     println!(
-                                        "AppNonce: {:} NetId: {:} DevAddr: {:}",
+                                        "\tAppNonce: {:} NetId: {:} DevAddr: {:}",
                                         hex_encode_reversed(join_accept.app_nonce().as_ref()),
                                         hex_encode_reversed(join_accept.net_id().as_ref()),
                                         hex_encode_reversed(join_accept.dev_addr().as_ref()),
                                     );
                                     println!(
-                                        "\t\tDL Settings: {:x?} RxDelay: {:x?}",
+                                        "\tDL Settings: {:x?} RxDelay: {:x?}",
                                         join_accept.dl_settings(),
                                         join_accept.rx_delay()
                                     );
@@ -260,8 +324,8 @@ async fn run(opt: Opt) -> Result {
                                                 &app_key,
                                             );
 
-                                            println!("\t\tNewskey: {:X?}", newskey);
-                                            println!("\t\tAppskey: {:X?}", appskey);
+                                            println!("\tNewskey: {:X?}", newskey);
+                                            println!("\tAppskey: {:X?}", appskey);
 
                                             device.session = Some(Session {
                                                 newskey,
@@ -280,8 +344,8 @@ async fn run(opt: Opt) -> Result {
                     MacPayload::Data(data) => {
                         let fhdr = data.fhdr();
                         print!(
-                            "{:x?}, {:x?}, FCnt({:x?})",
-                            fhdr.dev_addr(),
+                            "\tDevAddr: {:}, {:x?}, FCnt({:x?})",
+                            hex_encode_reversed(&fhdr.dev_addr().as_ref()),
                             fhdr.fctrl(),
                             fhdr.fcnt(),
                         );
@@ -295,7 +359,7 @@ async fn run(opt: Opt) -> Result {
                                 // if there is a live session, check for address match
                                 if let Some(session) = &device.session {
                                     if session.devaddr == devaddr {
-                                        let payload = packet.decrypted_payload(
+                                        let payload = packet.payload().decrypted_payload(
                                             // depending on FPort,
                                             // we use newskey os appskey
                                             if fport == 0 {
@@ -305,14 +369,14 @@ async fn run(opt: Opt) -> Result {
                                             },
                                             fhdr.fcnt() as u32,
                                         )?;
-                                        println!("\t\t\tDecryptedData({:x?})", payload);
+                                        println!("\tDecrypted({:x?})", payload);
                                         break;
                                     }
                                 }
                                 // if we are on the last item, we could not decrypt
                                 if index == devices.len() - 1 {
                                     println!(
-                                        "\t\t\tEncryptedData({:x?})",
+                                        "\tEncryptedData({:x?})",
                                         data.encrypted_frm_payload().as_ref(),
                                     );
                                 }
@@ -323,7 +387,7 @@ async fn run(opt: Opt) -> Result {
 
                         let fopts = fhdr.fopts()?;
                         if fopts.len() > 0 {
-                            println!("\t\t\t{:x?}", fopts,);
+                            println!("\t{:x?}", fopts,);
                         }
                     }
                 }

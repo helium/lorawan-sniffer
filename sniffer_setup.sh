@@ -1,5 +1,5 @@
 #!/bin/bash
-# usage: sniffer_setup.sh <HotspotIP>
+# usage: sniffer_setup.sh <HotspotIP> [<HotspotPW>]
 # depends on ssh-keygen and ssh-keyscan and sshpass
 HotspotIP=$1
 if [ -z "$HotspotIP" ]
