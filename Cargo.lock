@@ -79,9 +79,9 @@ dependencies = [
 
 [[package]]
 name = "bumpalo"
-version = "3.2.0"
+version = "3.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1f359dc14ff8911330a51ef78022d376f25ed00248912803b58f00cb1c27f742"
+checksum = "12ae9db68ad7fac5fe51304d20f016c911539251075a214f8e663babefa35187"
 
 [[package]]
 name = "byteorder"
@@ -316,7 +316,7 @@ dependencies = [
 [[package]]
 name = "helium-console"
 version = "0.1.5"
-source = "git+https://github.com/helium/helium-console-cli#9c30c38d0913bde4ba184314b28a04c70dd12bed"
+source = "git+https://github.com/helium/helium-console-cli#bd9a2052d48c8d1bab85c13ccea49130cb1d0708"
 dependencies = [
  "base64 0.11.0",
  "hex",

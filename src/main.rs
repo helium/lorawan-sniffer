@@ -173,18 +173,8 @@ async fn run(opt: Opt) -> Result {
 
     // setup the epoll events
     let poll = Poll::new()?;
-    poll.register(
-        &miner_socket,
-        MINER,
-        Ready::readable(),
-        PollOpt::level(),
-    )?;
-    poll.register(
-        &radio_socket,
-        RADIO,
-        Ready::readable(),
-        PollOpt::level(),
-    )?;
+    poll.register(&miner_socket, MINER, Ready::readable(), PollOpt::level())?;
+    poll.register(&radio_socket, RADIO, Ready::readable(), PollOpt::level())?;
 
     let mut buffer = [0; 1024];
     let mut events = Events::with_capacity(128);
