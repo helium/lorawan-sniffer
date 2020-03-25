@@ -32,20 +32,37 @@ matrix:
     rust: stable
     before_script:
       - rustup target add $TARGET
-    script: cargo build --release --target $TARGET --locked
+      - rustup component add rustfmt
+      - rustup component add clippy
+    script:
+      - cargo fmt -- --check
+      - cargo build --release --target $TARGET --locked
+      - cargo clippy -- --deny=clippy::all
     <<: *DEPLOY_TO_GITHUB
 
   - name: macOS Binary
     env: MACOSX_DEPLOYMENT_TARGET=10.7 TARGET=x86_64-apple-darwin
     os: osx
     rust: stable
-    script: cargo build --release --target $TARGET --locked
+    before_script:
+      - rustup target add $TARGET
+      - rustup component add rustfmt
+      - rustup component add clippy
+    script:
+      - cargo fmt -- --check
+      - cargo build --release --target $TARGET --locked
+      - cargo clippy -- --deny=clippy::all
     <<: *DEPLOY_TO_GITHUB
 
   - name: Windows Binary
     env: TARGET=x86_64-pc-windows-gnu EXE=.exe
     rust: stable
-    before_script: rustup target add $TARGET
-    script: 
+    before_script:
+      - rustup target add $TARGET
+      - rustup component add rustfmt
+      - rustup component add clippy
+    script:
+      - cargo fmt -- --check
       - RUSTFLAGS="-C linker=x86_64-w64-mingw32-gcc" cargo build --release --target $TARGET --locked
+      - cargo clippy -- --deny=clippy::all
     <<: *DEPLOY_TO_GITHUB

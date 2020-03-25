@@ -139,7 +139,7 @@ impl SniffedPacket {
 async fn run(opt: Opt) -> Result {
     // try to parse the CLI iput
     let miner_server = opt.host.parse()?;
-    let mut miner_socket = UdpSocket::bind(&"0.0.0.0:1681".parse()?)?;
+    let miner_socket = UdpSocket::bind(&"0.0.0.0:1681".parse()?)?;
     // "connecting" filters for only frames from the server
     miner_socket.connect(miner_server)?;
     // send something so that server can know about us
@@ -169,22 +169,12 @@ async fn run(opt: Opt) -> Result {
 
     // we in turn put up our own server for the radio to connect to
     let radio_server = "0.0.0.0:1680".parse()?;
-    let mut radio_socket = UdpSocket::bind(&radio_server)?;
+    let radio_socket = UdpSocket::bind(&radio_server)?;
 
     // setup the epoll events
     let poll = Poll::new()?;
-    poll.register(
-        &mut miner_socket,
-        MINER,
-        Ready::readable(),
-        PollOpt::level(),
-    )?;
-    poll.register(
-        &mut radio_socket,
-        RADIO,
-        Ready::readable(),
-        PollOpt::level(),
-    )?;
+    poll.register(&miner_socket, MINER, Ready::readable(), PollOpt::level())?;
+    poll.register(&radio_socket, RADIO, Ready::readable(), PollOpt::level())?;
 
     let mut buffer = [0; 1024];
     let mut events = Events::with_capacity(128);
@@ -205,7 +195,7 @@ async fn run(opt: Opt) -> Result {
                     if let Some(radio_client) = &radio_client {
                         radio_socket.send_to(&buffer[0..num_recv], &radio_client)?;
                     }
-                    let msg = semtech_udp::Packet::parse(&mut buffer, num_recv)?;
+                    let msg = semtech_udp::Packet::parse(&buffer, num_recv)?;
                     buffer = [0; 1024];
 
                     match msg.data() {
@@ -226,7 +216,7 @@ async fn run(opt: Opt) -> Result {
                     let (num_recv, src) = radio_socket.recv_from(&mut buffer)?;
                     radio_client = Some(src);
                     miner_socket.send(&buffer[0..num_recv])?;
-                    let msg = semtech_udp::Packet::parse(&mut buffer, num_recv)?;
+                    let msg = semtech_udp::Packet::parse(&buffer, num_recv)?;
                     buffer = [0; 1024];
                     if let semtech_udp::PacketData::PushData(data) = msg.data() {
                         if let Some(rxpks) = &data.rxpk {
@@ -251,7 +241,7 @@ async fn run(opt: Opt) -> Result {
 
                 match &packet.direction {
                     Direction::Up(data) => println!("\tRSSI: {:}\tLSNR: {:}", data.rssi, data.lsnr),
-                    Direction::Down => println!(""),
+                    Direction::Down => println!(),
                 }
 
                 match &packet.payload().mac_payload() {
@@ -342,6 +332,7 @@ async fn run(opt: Opt) -> Result {
                         }
                     }
                     MacPayload::Data(data) => {
+                        println!("BYTES = {:X?}", packet.payload().inner_ref());
                         let fhdr = data.fhdr();
                         print!(
                             "\tDevAddr: {:}, {:x?}, FCnt({:x?})",
@@ -382,11 +373,11 @@ async fn run(opt: Opt) -> Result {
                                 }
                             }
                         } else {
-                            println!("");
+                            println!();
                         }
 
                         let fopts = fhdr.fopts()?;
-                        if fopts.len() > 0 {
+                        if !fopts.is_empty() {
                             println!("\t{:x?}", fopts,);
                         }
                     }
@@ -434,15 +425,14 @@ pub fn load_credentials(path: &str) -> Result<Option<Vec<Credentials>>> {
     Ok(Some(devices))
 }
 
-fn compare_bth_flipped(b: &[u8], hex_string: &String) -> Result<bool> {
+fn compare_bth_flipped(b: &[u8], hex_string: &str) -> Result<bool> {
     let hex_binary: Vec<u8> = hex::decode(hex_string)?.into_iter().rev().collect();
     let hex_ref: &[u8] = hex_binary.as_ref();
     Ok(b == hex_ref)
 }
 
-fn key_as_string_to_aes128(input: &String) -> Result<keys::AES128> {
-    let app_key = input.clone();
-    let key_binary: Vec<u8> = hex::decode(app_key)?;
+fn key_as_string_to_aes128(input: &str) -> Result<keys::AES128> {
+    let key_binary: Vec<u8> = hex::decode(input)?;
     let key: [u8; 16] = [
         key_binary[0],
         key_binary[1],
