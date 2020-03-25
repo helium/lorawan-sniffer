@@ -63,6 +63,6 @@ matrix:
       - rustup component add clippy
     script:
       - cargo fmt -- --check
-      - cargo build --release --target $TARGET --locked
+      - RUSTFLAGS="-C linker=x86_64-w64-mingw32-gcc" cargo build --release --target $TARGET --locked
       - cargo clippy -- --deny=clippy::all
     <<: *DEPLOY_TO_GITHUB
