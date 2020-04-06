@@ -26,9 +26,7 @@ If you want to use passthrough mode, you will need to connect your packet forwar
 
 ## Helium Image Quickstart
 
-If you are using a production or development image of a Helium hotspot, you can use the `snipper_setup.sh` script to do two things:
-* change the packet forwader's sub-band to 3 (905.5-906.9 MHz, Ch 16-23); this helps ensure that only this hotspot will talk to your LoRaWAN device (note: you will need to configure your LoRaWAN device exclusively for sub-band 3)
-* enable mirroring on the Helium Miner; the Miner will now forward a copy to all UDP traffic to port 1681 of the Hotspot IP
+If you are using a production or development image of a Helium hotspot, you can use the `snipper_setup.sh` script to enable mirroring on the Helium Miner; the Miner will now forward a copy to all UDP traffic to port 1681 of the Hotspot IP
 
 ```
 sniffer_setup.sh <HotspotIP> [<HotspotPW>]
