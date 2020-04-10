@@ -168,7 +168,7 @@ async fn run(opt: Opt) -> Result {
     };
 
     // we in turn put up our own server for the radio to connect to
-    let radio_server = "0.0.0.0:1680".parse()?;
+    let radio_server = "0.0.0.0:1683".parse()?;
     let radio_socket = UdpSocket::bind(&radio_server)?;
 
     // setup the epoll events
