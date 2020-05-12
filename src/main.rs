@@ -6,8 +6,6 @@ use mio::{
     net::UdpSocket,
     {Events, Poll, PollOpt, Ready, Token},
 };
-
-use semtech_udp;
 use serde_derive::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use std::{process, time::Duration};
