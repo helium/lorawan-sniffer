@@ -33,5 +33,5 @@ ssh-keyscan $HotspotIP  >> ~/.ssh/known_hosts
 sshpass -p $HotspotPW ssh helium@$HotspotIP \
     "(sudo sed -i '/{use_ebus, true},/ a \ \ \ {radio_mirror_port, 1681},' /opt/miner/releases/0.1.0/sys.config;\
     sudo sv x /etc/sv/miner; \
-    sudo sv x /etc/sv/lora_pkt_fwd_sx1301; \
+    sudo sv x /etc/sv/lora_pkt_fwd; \
     exit)"

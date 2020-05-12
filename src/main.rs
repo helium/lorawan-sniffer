@@ -9,6 +9,8 @@ use mio::{
     net::UdpSocket,
     {Events, Poll, PollOpt, Ready, Token},
 };
+
+use std::net::SocketAddr;
 use semtech_udp;
 use serde_derive::{Deserialize, Serialize};
 use std::{process, time::Duration};
@@ -26,10 +28,18 @@ struct Opt {
     /// IP address and port of miner mirror port
     /// (eg: 192.168.1.30:1681)
     #[structopt(short, long)]
-    host: String,
+    host: Option<String>,
     /// Optional API Key to populate devices from console
     #[structopt(short, long)]
     console: bool,
+
+    /// Outgoing socket
+    #[structopt(short, long, default_value = "3400")]
+    out_port: u16,
+
+    /// Incoming socket
+    #[structopt(short, long, default_value = "1600")]
+    in_port: u16,
 }
 
 pub type Result<T = ()> = std::result::Result<T, Box<dyn std::error::Error>>;
@@ -138,13 +148,21 @@ impl SniffedPacket {
 
 async fn run(opt: Opt) -> Result {
     // try to parse the CLI iput
-    let miner_server = opt.host.parse()?;
-    let miner_socket = UdpSocket::bind(&"0.0.0.0:1681".parse()?)?;
-    // "connecting" filters for only frames from the server
-    miner_socket.connect(miner_server)?;
-    // send something so that server can know about us
-    miner_socket.send(&[0])?;
+    let mut miner_socket = if let Some(host) = opt.host {
+        let miner_server = host.parse()?;
+        let socket_addr = SocketAddr::from(([0, 0, 0, 0], opt.out_port));
+        let socket = UdpSocket::bind(&socket_addr)?;
+                 // "connecting" filters for only frames from the server
+        socket.connect(miner_server)?;
+        // send something so that server can know about us
+        socket.send(&[0])?;
+        println!("Connected");
 
+        Some(socket)
+    } else {
+        None
+    };
+   
     let mut devices = {
         let mut ret = Vec::new();
 
@@ -167,13 +185,15 @@ async fn run(opt: Opt) -> Result {
         ret
     };
 
-    // we in turn put up our own server for the radio to connect to
-    let radio_server = "0.0.0.0:1683".parse()?;
+    // // we in turn put up our own server for the radio to connect to
+    let radio_server = SocketAddr::from(([0, 0, 0, 0], opt.in_port));
     let radio_socket = UdpSocket::bind(&radio_server)?;
-
+    println!("Server Up: {:?}", radio_socket);
     // setup the epoll events
     let poll = Poll::new()?;
-    poll.register(&miner_socket, MINER, Ready::readable(), PollOpt::level())?;
+    if let Some(socket) = &mut miner_socket {
+        poll.register(socket, MINER, Ready::readable(), PollOpt::level())?;
+    }
     poll.register(&radio_socket, RADIO, Ready::readable(), PollOpt::level())?;
 
     let mut buffer = [0; 1024];
@@ -190,32 +210,37 @@ async fn run(opt: Opt) -> Result {
             let mut packets: Vec<SniffedPacket> = Vec::new();
             match event.token() {
                 MINER => {
-                    let num_recv = miner_socket.recv(&mut buffer)?;
-                    // forward the packet along
-                    if let Some(radio_client) = &radio_client {
-                        radio_socket.send_to(&buffer[0..num_recv], &radio_client)?;
-                    }
-                    let msg = semtech_udp::Packet::parse(&buffer, num_recv)?;
-                    buffer = [0; 1024];
+                    if let Some(socket) = &mut miner_socket {
+                        let num_recv = socket.recv(&mut buffer)?;
+                        // forward the packet along
+                        // if let Some(radio_client) = &radio_client {
+                        //     //radio_socket.send_to(&buffer[0..num_recv], &radio_client)?;
+                        // }
+                        let msg = semtech_udp::Packet::parse(&buffer, num_recv)?;
+                        buffer = [0; 1024];
 
-                    match msg.data() {
-                        semtech_udp::PacketData::PullResp(data) => {
-                            packets.push(SniffedPacket::new(Pkt::Down(&data.txpk))?)
-                        }
-                        semtech_udp::PacketData::PushData(data) => {
-                            if let Some(rxpks) = &data.rxpk {
-                                for rxpk in rxpks {
-                                    packets.push(SniffedPacket::new(Pkt::Up(rxpk))?)
+                        match msg.data() {
+                            semtech_udp::PacketData::PullResp(data) => {
+                                packets.push(SniffedPacket::new(Pkt::Down(&data.txpk))?)
+                            }
+                            semtech_udp::PacketData::PushData(data) => {
+                                if let Some(rxpks) = &data.rxpk {
+                                    for rxpk in rxpks {
+                                        packets.push(SniffedPacket::new(Pkt::Up(rxpk))?)
+                                    }
                                 }
                             }
+                            _ => (),
                         }
-                        _ => (),
                     }
+                    
                 }
                 RADIO => {
                     let (num_recv, src) = radio_socket.recv_from(&mut buffer)?;
                     radio_client = Some(src);
-                    miner_socket.send(&buffer[0..num_recv])?;
+                    if let Some(socket) = &mut miner_socket {
+                        socket.send(&buffer[0..num_recv])?;
+                    }
                     let msg = semtech_udp::Packet::parse(&buffer, num_recv)?;
                     buffer = [0; 1024];
                     if let semtech_udp::PacketData::PushData(data) = msg.data() {
@@ -332,7 +357,7 @@ async fn run(opt: Opt) -> Result {
                         }
                     }
                     MacPayload::Data(data) => {
-                        println!("BYTES = {:X?}", packet.payload().inner_ref());
+                        //println!("BYTES = {:X?}", packet.payload().inner_ref());
                         let fhdr = data.fhdr();
                         print!(
                             "\tDevAddr: {:}, {:x?}, FCnt({:x?})",
