@@ -10,9 +10,9 @@ use mio::{
     {Events, Poll, PollOpt, Ready, Token},
 };
 
-use std::net::SocketAddr;
 use semtech_udp;
 use serde_derive::{Deserialize, Serialize};
+use std::net::SocketAddr;
 use std::{process, time::Duration};
 use structopt::StructOpt;
 
@@ -152,7 +152,7 @@ async fn run(opt: Opt) -> Result {
         let miner_server = host.parse()?;
         let socket_addr = SocketAddr::from(([0, 0, 0, 0], opt.out_port));
         let socket = UdpSocket::bind(&socket_addr)?;
-                 // "connecting" filters for only frames from the server
+        // "connecting" filters for only frames from the server
         socket.connect(miner_server)?;
         // send something so that server can know about us
         socket.send(&[0])?;
@@ -162,7 +162,7 @@ async fn run(opt: Opt) -> Result {
     } else {
         None
     };
-   
+
     let mut devices = {
         let mut ret = Vec::new();
 
@@ -185,7 +185,7 @@ async fn run(opt: Opt) -> Result {
         ret
     };
 
-    // // we in turn put up our own server for the radio to connect to
+    // we in turn put up our own server for the radio to connect to
     let radio_server = SocketAddr::from(([0, 0, 0, 0], opt.in_port));
     let radio_socket = UdpSocket::bind(&radio_server)?;
     println!("Server Up: {:?}", radio_socket);
@@ -213,9 +213,9 @@ async fn run(opt: Opt) -> Result {
                     if let Some(socket) = &mut miner_socket {
                         let num_recv = socket.recv(&mut buffer)?;
                         // forward the packet along
-                        // if let Some(radio_client) = &radio_client {
-                        //     //radio_socket.send_to(&buffer[0..num_recv], &radio_client)?;
-                        // }
+                        if let Some(radio_client) = &radio_client {
+                            radio_socket.send_to(&buffer[0..num_recv], &radio_client)?;
+                        }
                         let msg = semtech_udp::Packet::parse(&buffer, num_recv)?;
                         buffer = [0; 1024];
 
@@ -233,7 +233,6 @@ async fn run(opt: Opt) -> Result {
                             _ => (),
                         }
                     }
-                    
                 }
                 RADIO => {
                     let (num_recv, src) = radio_socket.recv_from(&mut buffer)?;
