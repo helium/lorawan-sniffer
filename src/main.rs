@@ -1,6 +1,3 @@
-use base64;
-use helium_console;
-use lorawan;
 use lorawan::{
     keys,
     parser::{derive_appskey, derive_newskey, GenericPhyPayload, MacPayload},

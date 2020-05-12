@@ -5,7 +5,6 @@ use std::{
     io::{stdin, Write},
     path::Path,
 };
-use toml;
 
 pub fn get_input(prompt: &str) -> String {
     print!("{}\r\n", prompt);
