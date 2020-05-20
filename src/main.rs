@@ -394,7 +394,6 @@ async fn run(opt: Opt) -> Result {
                                             println!("\tDecrypted({:x?})", decrypted.frm_payload());
                                         }
                                     }
-
                                     if index == devices.len() - 1 {
                                         println!(
                                             "\tEncryptedData"
