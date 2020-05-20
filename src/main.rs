@@ -1,7 +1,11 @@
+use chrono::Local;
 use lorawan::{
-    keys,
     default_crypto::DefaultFactory,
-    parser::{JoinRequestPayload, PhyPayload, EncryptedDataPayload, AsPhyPayloadBytes, EncryptedJoinAcceptPayload, DataHeader, DataPayload, parse as lorawan_parser},
+    keys,
+    parser::{
+        parse as lorawan_parser, AsPhyPayloadBytes, DataHeader, DataPayload, EncryptedDataPayload,
+        EncryptedJoinAcceptPayload, JoinRequestPayload, PhyPayload,
+    },
 };
 use mio::{
     net::UdpSocket,
@@ -11,7 +15,6 @@ use serde_derive::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use std::{process, time::Duration};
 use structopt::StructOpt;
-use chrono::Local;
 
 const MINER: Token = Token(0);
 const RADIO: Token = Token(1);
@@ -50,7 +53,9 @@ pub type Result<T = ()> = std::result::Result<T, Box<dyn std::error::Error>>;
 struct DevAddr([u8; 4]);
 
 impl DevAddr {
-    fn copy_from_parser<T: std::convert::AsRef<[u8]>>(src: &lorawan::parser::DevAddr<T>) -> DevAddr {
+    fn copy_from_parser<T: std::convert::AsRef<[u8]>>(
+        src: &lorawan::parser::DevAddr<T>,
+    ) -> DevAddr {
         let mut dst = [0u8; 4];
         for (d, s) in dst.iter_mut().zip(src.as_ref().iter()) {
             *d = *s;
@@ -115,9 +120,6 @@ struct RxRf {
     rssi: i64,
 }
 
-
-
-
 impl SniffedPacket {
     fn new(pkt: Pkt) -> Result<SniffedPacket> {
         let data = match pkt {
@@ -146,7 +148,7 @@ impl SniffedPacket {
         })
     }
 
-    fn payload(&self) -> &PhyPayload<Vec<u8>,DefaultFactory> {
+    fn payload(&self) -> &PhyPayload<Vec<u8>, DefaultFactory> {
         &self.payload
     }
 }
@@ -268,13 +270,14 @@ async fn run(opt: Opt) -> Result {
 
                 print!(
                     "{}\t{:.1} MHz \t{:}",
-                    match &packet.payload(){
+                    match &packet.payload() {
                         PhyPayload::JoinRequest(_) => "JoinRequest",
                         PhyPayload::JoinAccept(_) => "JoinAccept",
                         PhyPayload::Data(data) => {
-                            match data.is_uplink() {
-                                true => "DataUp",
-                                false => "DataDown"
+                            if data.is_uplink() {
+                                "DataUp"
+                            } else {
+                                "DataDown"
                             }
                         }
                     },
@@ -305,12 +308,9 @@ async fn run(opt: Opt) -> Result {
                                 join_request.dev_eui().as_ref(),
                                 &device.credentials.dev_eui,
                             )? {
-
                                 let mut copy: Vec<u8> = Vec::new();
                                 copy.extend(join_request.as_bytes());
-                                device.last_join_request = Some(
-                                    JoinRequestPayload::new(copy)?
-                                );
+                                device.last_join_request = Some(JoinRequestPayload::new(copy)?);
                             }
                         }
                     }
@@ -325,7 +325,6 @@ async fn run(opt: Opt) -> Result {
                             // If the MIC works, then we have matched a previous join request
                             // join response and we can now derive and save session keys
                             if decrypted_join_accept.validate_mic(&app_key) {
-                              
                                 println!(
                                     "\tAppNonce: {:} NetId: {:} DevAddr: {:}",
                                     hex_encode_reversed(decrypted_join_accept.app_nonce().as_ref()),
@@ -339,15 +338,11 @@ async fn run(opt: Opt) -> Result {
                                 );
 
                                 if let Some(join_request) = &device.last_join_request {
-                                    let newskey = decrypted_join_accept.derive_newskey(
-                                        &join_request.dev_nonce(),
-                                        &app_key,
-                                    );
+                                    let newskey = decrypted_join_accept
+                                        .derive_newskey(&join_request.dev_nonce(), &app_key);
 
-                                    let appskey = decrypted_join_accept.derive_appskey(
-                                        &join_request.dev_nonce(),
-                                        &app_key,
-                                    );
+                                    let appskey = decrypted_join_accept
+                                        .derive_appskey(&join_request.dev_nonce(), &app_key);
 
                                     println!("\tNewskey: {:X?}", newskey);
                                     println!("\tAppskey: {:X?}", appskey);
@@ -359,7 +354,6 @@ async fn run(opt: Opt) -> Result {
                                             &decrypted_join_accept.dev_addr(),
                                         ),
                                     });
-                            
                                 }
                                 break;
                             }
@@ -368,10 +362,8 @@ async fn run(opt: Opt) -> Result {
                     PhyPayload::Data(data) => {
                         match data {
                             DataPayload::Encrypted(encrypted_data) => {
-
                                 let fhdr = encrypted_data.fhdr();
                                 print!(
-
                                     "\tDevAddr: {:}, {:x?}, FCnt({:x?})",
                                     hex_encode_reversed(&fhdr.dev_addr().as_ref()),
                                     fhdr.fctrl(),
@@ -385,7 +377,8 @@ async fn run(opt: Opt) -> Result {
                                         if session.devaddr == devaddr {
                                             let mut copy: Vec<u8> = Vec::new();
                                             copy.extend(encrypted_data.as_bytes());
-                                            let encrypted_payload = EncryptedDataPayload::new(copy)?;
+                                            let encrypted_payload =
+                                                EncryptedDataPayload::new(copy)?;
                                             let decrypted = encrypted_payload.decrypt(
                                                 Some(&session.newskey),
                                                 Some(&session.appskey),
@@ -395,15 +388,11 @@ async fn run(opt: Opt) -> Result {
                                         }
                                     }
                                     if index == devices.len() - 1 {
-                                        println!(
-                                            "\tEncryptedData"
-                                        );
+                                        println!("\tEncryptedData");
                                     }
                                 }
                             }
-                            _ => {
-                                panic!("Makes no sense to have decrypted data here")
-                            }
+                            _ => panic!("Makes no sense to have decrypted data here"),
                         }
                     }
                 }
