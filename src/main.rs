@@ -1,6 +1,11 @@
+use chrono::Local;
 use lorawan::{
+    default_crypto::DefaultFactory,
     keys,
-    parser::{derive_appskey, derive_newskey, GenericPhyPayload, MacPayload},
+    parser::{
+        parse as lorawan_parser, AsPhyPayloadBytes, DataHeader, DataPayload, EncryptedDataPayload,
+        EncryptedJoinAcceptPayload, JoinRequestPayload, PhyPayload,
+    },
 };
 use mio::{
     net::UdpSocket,
@@ -24,9 +29,14 @@ struct Opt {
     /// (eg: 192.168.1.30:1681)
     #[structopt(short, long)]
     host: Option<String>,
+
     /// Optional API Key to populate devices from console
     #[structopt(short, long)]
     console: bool,
+
+    /// disable timestamp on output
+    #[structopt(long)]
+    disable_ts: bool,
 
     /// Outgoing socket
     #[structopt(short, long, default_value = "3400")]
@@ -43,7 +53,9 @@ pub type Result<T = ()> = std::result::Result<T, Box<dyn std::error::Error>>;
 struct DevAddr([u8; 4]);
 
 impl DevAddr {
-    fn copy_from_parser(src: &lorawan::parser::DevAddr) -> DevAddr {
+    fn copy_from_parser<T: std::convert::AsRef<[u8]>>(
+        src: &lorawan::parser::DevAddr<T>,
+    ) -> DevAddr {
         let mut dst = [0u8; 4];
         for (d, s) in dst.iter_mut().zip(src.as_ref().iter()) {
             *d = *s;
@@ -60,7 +72,7 @@ struct Session {
 
 struct Device {
     credentials: Credentials,
-    last_join_request: Option<GenericPhyPayload<Vec<u8>>>,
+    last_join_request: Option<JoinRequestPayload<Vec<u8>, DefaultFactory>>,
     session: Option<Session>,
 }
 
@@ -92,7 +104,7 @@ enum Pkt<'a> {
 }
 
 struct SniffedPacket {
-    payload: GenericPhyPayload<Vec<u8>>,
+    payload: PhyPayload<Vec<u8>, DefaultFactory>,
     freq: f64,
     datr: String,
     direction: Direction,
@@ -129,14 +141,14 @@ impl SniffedPacket {
         };
 
         Ok(SniffedPacket {
-            payload: GenericPhyPayload::new(bytes)?,
+            payload: lorawan_parser(bytes)?,
             freq,
             datr,
             direction,
         })
     }
 
-    fn payload(&self) -> &GenericPhyPayload<Vec<u8>> {
+    fn payload(&self) -> &PhyPayload<Vec<u8>, DefaultFactory> {
         &self.payload
     }
 }
@@ -251,9 +263,24 @@ async fn run(opt: Opt) -> Result {
             // process all the packets, including tracking Join/JoinAccept,
             // deriving session keys, and decrypting packets when possible
             for packet in packets {
+                let date = Local::now();
+                if !opt.disable_ts {
+                    print!("{}  ", date.format("%H:%M:%S"));
+                }
+
                 print!(
-                    "{:?}\t{:.1} MHz \t{:}",
-                    packet.payload().mhdr().mtype(),
+                    "{}\t{:.1} MHz \t{:}",
+                    match &packet.payload() {
+                        PhyPayload::JoinRequest(_) => "JoinRequest",
+                        PhyPayload::JoinAccept(_) => "JoinAccept",
+                        PhyPayload::Data(data) => {
+                            if data.is_uplink() {
+                                "DataUp"
+                            } else {
+                                "DataDown"
+                            }
+                        }
+                    },
                     packet.freq,
                     packet.datr
                 );
@@ -263,10 +290,10 @@ async fn run(opt: Opt) -> Result {
                     Direction::Down => println!(),
                 }
 
-                match &packet.payload().mac_payload() {
-                    MacPayload::JoinRequest(join_request) => {
+                match &packet.payload() {
+                    PhyPayload::JoinRequest(join_request) => {
                         println!(
-                            "\tAppEui: {:} DevEui: {:} DevNonce: {:}",
+                            "\t  AppEui: {:} DevEui: {:} DevNonce: {:}",
                             hex_encode_reversed(join_request.app_eui().as_ref()),
                             hex_encode_reversed(join_request.dev_eui().as_ref()),
                             hex_encode_reversed(join_request.dev_nonce().as_ref())
@@ -281,123 +308,91 @@ async fn run(opt: Opt) -> Result {
                                 join_request.dev_eui().as_ref(),
                                 &device.credentials.dev_eui,
                             )? {
-                                device.last_join_request = Some(GenericPhyPayload::new(
-                                    packet.payload().inner_ref().clone(),
-                                )?);
+                                let mut copy: Vec<u8> = Vec::new();
+                                copy.extend(join_request.as_bytes());
+                                device.last_join_request = Some(JoinRequestPayload::new(copy)?);
                             }
                         }
                     }
-                    MacPayload::JoinAccept(_) => {
+                    PhyPayload::JoinAccept(join_accept) => {
                         for device in &mut devices {
                             let app_key = key_as_string_to_aes128(&device.credentials.app_key)?;
-                            let decrypted_join_accept =
-                                GenericPhyPayload::<[u8; 17]>::new_decrypted_join_accept(
-                                    packet.payload().inner_ref().clone(),
-                                    &app_key,
-                                )
-                                .unwrap();
+                            let mut copy: Vec<u8> = Vec::new();
+                            copy.extend(join_accept.as_bytes());
+                            let encrypted_join_accept = EncryptedJoinAcceptPayload::new(copy)?;
+                            let decrypted_join_accept = encrypted_join_accept.decrypt(&app_key);
 
                             // If the MIC works, then we have matched a previous join request
                             // join response and we can now derive and save session keys
-                            if decrypted_join_accept.validate_join_mic(&app_key).unwrap() {
-                                if let MacPayload::JoinAccept(join_accept) =
-                                    decrypted_join_accept.mac_payload()
-                                {
-                                    println!(
-                                        "\tAppNonce: {:} NetId: {:} DevAddr: {:}",
-                                        hex_encode_reversed(join_accept.app_nonce().as_ref()),
-                                        hex_encode_reversed(join_accept.net_id().as_ref()),
-                                        hex_encode_reversed(join_accept.dev_addr().as_ref()),
-                                    );
-                                    println!(
-                                        "\tDL Settings: {:x?} RxDelay: {:x?}",
-                                        join_accept.dl_settings(),
-                                        join_accept.rx_delay()
-                                    );
+                            if decrypted_join_accept.validate_mic(&app_key) {
+                                println!(
+                                    "\tAppNonce: {:} NetId: {:} DevAddr: {:}",
+                                    hex_encode_reversed(decrypted_join_accept.app_nonce().as_ref()),
+                                    hex_encode_reversed(decrypted_join_accept.net_id().as_ref()),
+                                    hex_encode_reversed(decrypted_join_accept.dev_addr().as_ref()),
+                                );
+                                println!(
+                                    "\tDL Settings: {:x?} RxDelay: {:x?}",
+                                    decrypted_join_accept.dl_settings(),
+                                    decrypted_join_accept.rx_delay()
+                                );
 
-                                    if let Some(phy_join_request) = &device.last_join_request {
-                                        if let MacPayload::JoinRequest(join_request) =
-                                            phy_join_request.mac_payload()
-                                        {
-                                            let newskey = derive_newskey(
-                                                &join_accept.app_nonce(),
-                                                &join_accept.net_id(),
-                                                &join_request.dev_nonce(),
-                                                &app_key,
-                                            );
+                                if let Some(join_request) = &device.last_join_request {
+                                    let newskey = decrypted_join_accept
+                                        .derive_newskey(&join_request.dev_nonce(), &app_key);
 
-                                            let appskey = derive_appskey(
-                                                &join_accept.app_nonce(),
-                                                &join_accept.net_id(),
-                                                &join_request.dev_nonce(),
-                                                &app_key,
-                                            );
+                                    let appskey = decrypted_join_accept
+                                        .derive_appskey(&join_request.dev_nonce(), &app_key);
 
-                                            println!("\tNewskey: {:X?}", newskey);
-                                            println!("\tAppskey: {:X?}", appskey);
+                                    println!("\tNewskey: {:X?}", newskey);
+                                    println!("\tAppskey: {:X?}", appskey);
 
-                                            device.session = Some(Session {
-                                                newskey,
-                                                appskey,
-                                                devaddr: DevAddr::copy_from_parser(
-                                                    &join_accept.dev_addr(),
-                                                ),
-                                            });
-                                        }
-                                    }
-                                    break;
+                                    device.session = Some(Session {
+                                        newskey,
+                                        appskey,
+                                        devaddr: DevAddr::copy_from_parser(
+                                            &decrypted_join_accept.dev_addr(),
+                                        ),
+                                    });
                                 }
+                                break;
                             }
                         }
                     }
-                    MacPayload::Data(data) => {
-                        //println!("BYTES = {:X?}", packet.payload().inner_ref());
-                        let fhdr = data.fhdr();
-                        print!(
-                            "\tDevAddr: {:}, {:x?}, FCnt({:x?})",
-                            hex_encode_reversed(&fhdr.dev_addr().as_ref()),
-                            fhdr.fctrl(),
-                            fhdr.fcnt(),
-                        );
+                    PhyPayload::Data(data) => {
+                        match data {
+                            DataPayload::Encrypted(encrypted_data) => {
+                                let fhdr = encrypted_data.fhdr();
+                                print!(
+                                    "\tDevAddr: {:}, {:x?}, FCnt({:x?})",
+                                    hex_encode_reversed(&fhdr.dev_addr().as_ref()),
+                                    fhdr.fctrl(),
+                                    fhdr.fcnt(),
+                                );
 
-                        // if there is some FPort => encrypted payload
-                        // iterate through our devices until we find a DevAddr match
-                        if let Some(fport) = data.f_port() {
-                            println!(", FPort({:?}), ", fport);
-                            let devaddr = DevAddr::copy_from_parser(&fhdr.dev_addr());
-                            for (index, device) in devices.iter().enumerate() {
-                                // if there is a live session, check for address match
-                                if let Some(session) = &device.session {
-                                    if session.devaddr == devaddr {
-                                        let payload = packet.payload().decrypted_payload(
-                                            // depending on FPort,
-                                            // we use newskey os appskey
-                                            if fport == 0 {
-                                                &session.newskey
-                                            } else {
-                                                &session.appskey
-                                            },
-                                            fhdr.fcnt() as u32,
-                                        )?;
-                                        println!("\tDecrypted({:x?})", payload);
-                                        break;
+                                let devaddr = DevAddr::copy_from_parser(&fhdr.dev_addr());
+                                for (index, device) in devices.iter().enumerate() {
+                                    // if there is a live session, check for address match
+                                    if let Some(session) = &device.session {
+                                        if session.devaddr == devaddr {
+                                            let mut copy: Vec<u8> = Vec::new();
+                                            copy.extend(encrypted_data.as_bytes());
+                                            let encrypted_payload =
+                                                EncryptedDataPayload::new(copy)?;
+                                            let decrypted = encrypted_payload.decrypt(
+                                                Some(&session.newskey),
+                                                Some(&session.appskey),
+                                                fhdr.fcnt() as u32,
+                                            )?;
+                                            println!("\tDecrypted({:x?})", decrypted.frm_payload());
+                                        }
+                                    }
+                                    if index == devices.len() - 1 {
+                                        println!("\tEncryptedData");
                                     }
                                 }
-                                // if we are on the last item, we could not decrypt
-                                if index == devices.len() - 1 {
-                                    println!(
-                                        "\tEncryptedData({:x?})",
-                                        data.encrypted_frm_payload().as_ref(),
-                                    );
-                                }
                             }
-                        } else {
-                            println!();
-                        }
-
-                        let fopts = fhdr.fopts()?;
-                        if !fopts.is_empty() {
-                            println!("\t{:x?}", fopts,);
+                            _ => panic!("Makes no sense to have decrypted data here"),
                         }
                     }
                 }
