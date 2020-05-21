@@ -363,7 +363,7 @@ async fn run(opt: Opt) -> Result {
                         match data {
                             DataPayload::Encrypted(encrypted_data) => {
                                 let fhdr = encrypted_data.fhdr();
-                                print!(
+                                println!(
                                     "\tDevAddr: {:}, {:x?}, FCnt({:x?})",
                                     hex_encode_reversed(&fhdr.dev_addr().as_ref()),
                                     fhdr.fctrl(),
@@ -375,20 +375,39 @@ async fn run(opt: Opt) -> Result {
                                     // if there is a live session, check for address match
                                     if let Some(session) = &device.session {
                                         if session.devaddr == devaddr {
-                                            let mut copy: Vec<u8> = Vec::new();
-                                            copy.extend(encrypted_data.as_bytes());
-                                            let encrypted_payload =
-                                                EncryptedDataPayload::new(copy)?;
-                                            let decrypted = encrypted_payload.decrypt(
-                                                Some(&session.newskey),
-                                                Some(&session.appskey),
-                                                fhdr.fcnt() as u32,
-                                            )?;
-                                            println!("\tDecrypted({:x?})", decrypted.frm_payload());
+                                            if encrypted_data
+                                                .validate_mic(&session.newskey, fhdr.fcnt() as u32)
+                                            {
+                                                let mut copy: Vec<u8> = Vec::new();
+                                                copy.extend(encrypted_data.as_bytes());
+                                                let encrypted_payload =
+                                                    EncryptedDataPayload::new(copy)?;
+                                                let decrypted = encrypted_payload.decrypt(
+                                                    Some(&session.newskey),
+                                                    Some(&session.appskey),
+                                                    fhdr.fcnt() as u32,
+                                                )?;
+                                                println!(
+                                                    "\tDecrypted({:x?})",
+                                                    decrypted.frm_payload()
+                                                );
+                                                break;
+
+                                            } else {
+                                                println!("\tFailed MIC Validation");
+                                            }
                                         }
                                     }
                                     if index == devices.len() - 1 {
                                         println!("\tEncryptedData");
+                                    }
+                                    let mut fopts = false;
+                                    for mac_cmd in fhdr.fopts() {
+                                        print!("{:?}\t", mac_cmd);
+                                        fopts = true;
+                                    }
+                                    if fopts {
+                                        println!();
                                     }
                                 }
                             }

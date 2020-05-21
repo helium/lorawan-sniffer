@@ -495,8 +495,8 @@ dependencies = [
 
 [[package]]
 name = "lorawan"
-version = "0.6.0-rc1"
-source = "git+https://github.com/ivajloip/rust-lorawan.git#610505bbbea9d720c58d1d7e1e458dfe43e967a3"
+version = "0.6.0-rc2"
+source = "git+https://github.com/ivajloip/rust-lorawan.git?rev=v0.6.0-rc2#e6cf1060d61fbea969f6e7a4e6a9609ae29905d4"
 dependencies = [
  "aes",
  "cmac",
@@ -505,7 +505,7 @@ dependencies = [
 
 [[package]]
 name = "lorawan-sniffer"
-version = "0.1.1"
+version = "0.1.4"
 dependencies = [
  "aes",
  "base64 0.12.1",
@@ -1088,9 +1088,9 @@ checksum = "2d67a5a62ba6e01cb2192ff309324cb4875d0c451d55fe2319433abe7a05a8ee"
 
 [[package]]
 name = "syn"
-version = "1.0.22"
+version = "1.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1425de3c33b0941002740a420b1a906a350b88d08b82b2c8a01035a3f9447bac"
+checksum = "95b5f192649e48a5302a13f2feb224df883b98933222369e4b3b0fe2a5447269"
 dependencies = [
  "proc-macro2",
  "quote",

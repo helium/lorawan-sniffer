@@ -1,13 +1,13 @@
 [package]
 name = "lorawan-sniffer"
-version = "0.1.1"
+version = "0.1.4"
 authors = ["lthiery <me@louisthiery.com>"]
 edition = "2018"
 
 [dependencies]
 tokio = { version = "0.2", features = ["full"] }
 structopt = { version = "0.3.2", default-features = false }
-lorawan = { git = "https://github.com/ivajloip/rust-lorawan.git" }
+lorawan = { git = "https://github.com/ivajloip/rust-lorawan.git", rev = "v0.6.0-rc2"}
 helium-console = { git = "https://github.com/helium/helium-console-cli" }
 semtech-udp = { git = "https://github.com/helium/semtech-udp" }
 base64 = "0.12.0"
