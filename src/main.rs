@@ -392,7 +392,6 @@ async fn run(opt: Opt) -> Result {
                                                     decrypted.frm_payload()
                                                 );
                                                 break;
-
                                             } else {
                                                 println!("\tFailed MIC Validation");
                                             }
