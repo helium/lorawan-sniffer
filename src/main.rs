@@ -223,22 +223,24 @@ async fn run(opt: Opt) -> Result {
                         if let Some(radio_client) = &radio_client {
                             radio_socket.send_to(&buffer[0..num_recv], &radio_client)?;
                         }
-                        let msg = semtech_udp::Packet::parse(&buffer, num_recv)?;
-                        buffer = [0; 1024];
-
-                        match msg.data() {
-                            semtech_udp::PacketData::PullResp(data) => {
-                                packets.push(SniffedPacket::new(Pkt::Down(&data.txpk))?)
-                            }
-                            semtech_udp::PacketData::PushData(data) => {
-                                if let Some(rxpks) = &data.rxpk {
-                                    for rxpk in rxpks {
-                                        packets.push(SniffedPacket::new(Pkt::Up(rxpk))?)
+                        if let Ok(msg) = semtech_udp::Packet::parse(&buffer, num_recv) {
+                            match msg.data() {
+                                semtech_udp::PacketData::PullResp(data) => {
+                                    packets.push(SniffedPacket::new(Pkt::Down(&data.txpk))?)
+                                }
+                                semtech_udp::PacketData::PushData(data) => {
+                                    if let Some(rxpks) = &data.rxpk {
+                                        for rxpk in rxpks {
+                                            packets.push(SniffedPacket::new(Pkt::Up(rxpk))?)
+                                        }
                                     }
                                 }
+                                _ => (),
                             }
-                            _ => (),
+                        } else {
+                            println!("Received frame that is not a valid Semtech UDP frame");
                         }
+                        buffer = [0; 1024];
                     }
                 }
                 RADIO => {
@@ -265,7 +267,7 @@ async fn run(opt: Opt) -> Result {
             for packet in packets {
                 let date = Local::now();
                 if !opt.disable_ts {
-                    print!("{}  ", date.format("%H:%M:%S"));
+                    print!("{}  ", Utc::now().format("[%F %H:%M:%S%.3f]"));
                 }
 
                 print!(

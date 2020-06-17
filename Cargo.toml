@@ -9,7 +9,7 @@ tokio = { version = "0.2", features = ["full"] }
 structopt = { version = "0.3.2", default-features = false }
 lorawan = { git = "https://github.com/ivajloip/rust-lorawan.git", rev = "v0.6.0-rc2"}
 helium-console = { git = "https://github.com/helium/helium-console-cli" }
-semtech-udp = { git = "https://github.com/helium/semtech-udp" }
+semtech-udp = { git = "https://github.com/lthiery/semtech-udp", rev = "6a5470287fa2704f75b90c5fbbbbbc47b11172e7" }
 base64 = "0.12.0"
 mio = "0.6"
 aes = "0.3.2"
