@@ -403,8 +403,6 @@ async fn run(opt: Opt) -> Result {
                                                     fhdr.fcnt() as u32,
                                                 )?;
 
-
-
                                                 println!(
                                                     "\tDevEui[-4..]: {:}, Decrypted({:x?})",
                                                     &device.credentials.dev_eui[12..],
@@ -419,9 +417,6 @@ async fn run(opt: Opt) -> Result {
                                     if index == devices.len() - 1 {
                                         println!("\tEncryptedData");
                                     }
-
-
-
                                 }
                             }
                             _ => panic!("Makes no sense to have decrypted data here"),
