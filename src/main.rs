@@ -1,5 +1,5 @@
 use chrono::Utc;
-use lorawan::{
+use lorawan_encoding::{
     default_crypto::DefaultFactory,
     keys,
     parser::{
@@ -54,7 +54,7 @@ struct DevAddr([u8; 4]);
 
 impl DevAddr {
     fn copy_from_parser<T: std::convert::AsRef<[u8]>>(
-        src: &lorawan::parser::DevAddr<T>,
+        src: &lorawan_encoding::parser::DevAddr<T>,
     ) -> DevAddr {
         let mut dst = [0u8; 4];
         for (d, s) in dst.iter_mut().zip(src.as_ref().iter()) {
@@ -402,8 +402,12 @@ async fn run(opt: Opt) -> Result {
                                                     Some(&session.appskey),
                                                     fhdr.fcnt() as u32,
                                                 )?;
+
+
+
                                                 println!(
-                                                    "\tDecrypted({:x?})",
+                                                    "\tDevEui[-4..]: {:}, Decrypted({:x?})",
+                                                    &device.credentials.dev_eui[12..],
                                                     decrypted.frm_payload()
                                                 );
                                                 break;

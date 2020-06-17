@@ -494,9 +494,9 @@ dependencies = [
 ]
 
 [[package]]
-name = "lorawan"
-version = "0.6.0-rc2"
-source = "git+https://github.com/ivajloip/rust-lorawan.git?rev=v0.6.0-rc2#e6cf1060d61fbea969f6e7a4e6a9609ae29905d4"
+name = "lorawan-encoding"
+version = "0.6.0-rc0"
+source = "git+https://github.com/ivajloip/rust-lorawan.git#f1c67e118522f346ffb587a87d32c91aab1cbbc9"
 dependencies = [
  "aes",
  "cmac",
@@ -512,7 +512,7 @@ dependencies = [
  "chrono",
  "helium-console",
  "hex",
- "lorawan",
+ "lorawan-encoding",
  "mio",
  "semtech-udp",
  "serde",
