@@ -1,5 +1,5 @@
-use chrono::Local;
-use lorawan::{
+use chrono::Utc;
+use lorawan_encoding::{
     default_crypto::DefaultFactory,
     keys,
     parser::{
@@ -54,7 +54,7 @@ struct DevAddr([u8; 4]);
 
 impl DevAddr {
     fn copy_from_parser<T: std::convert::AsRef<[u8]>>(
-        src: &lorawan::parser::DevAddr<T>,
+        src: &lorawan_encoding::parser::DevAddr<T>,
     ) -> DevAddr {
         let mut dst = [0u8; 4];
         for (d, s) in dst.iter_mut().zip(src.as_ref().iter()) {
@@ -223,22 +223,24 @@ async fn run(opt: Opt) -> Result {
                         if let Some(radio_client) = &radio_client {
                             radio_socket.send_to(&buffer[0..num_recv], &radio_client)?;
                         }
-                        let msg = semtech_udp::Packet::parse(&buffer, num_recv)?;
-                        buffer = [0; 1024];
-
-                        match msg.data() {
-                            semtech_udp::PacketData::PullResp(data) => {
-                                packets.push(SniffedPacket::new(Pkt::Down(&data.txpk))?)
-                            }
-                            semtech_udp::PacketData::PushData(data) => {
-                                if let Some(rxpks) = &data.rxpk {
-                                    for rxpk in rxpks {
-                                        packets.push(SniffedPacket::new(Pkt::Up(rxpk))?)
+                        if let Ok(msg) = semtech_udp::Packet::parse(&buffer, num_recv) {
+                            match msg.data() {
+                                semtech_udp::PacketData::PullResp(data) => {
+                                    packets.push(SniffedPacket::new(Pkt::Down(&data.txpk))?)
+                                }
+                                semtech_udp::PacketData::PushData(data) => {
+                                    if let Some(rxpks) = &data.rxpk {
+                                        for rxpk in rxpks {
+                                            packets.push(SniffedPacket::new(Pkt::Up(rxpk))?)
+                                        }
                                     }
                                 }
+                                _ => (),
                             }
-                            _ => (),
+                        } else {
+                            println!("Received frame that is not a valid Semtech UDP frame");
                         }
+                        buffer = [0; 1024];
                     }
                 }
                 RADIO => {
@@ -263,9 +265,8 @@ async fn run(opt: Opt) -> Result {
             // process all the packets, including tracking Join/JoinAccept,
             // deriving session keys, and decrypting packets when possible
             for packet in packets {
-                let date = Local::now();
                 if !opt.disable_ts {
-                    print!("{}  ", date.format("%H:%M:%S"));
+                    print!("{}  ", Utc::now().format("[%F %H:%M:%S%.3f]"));
                 }
 
                 print!(
@@ -371,6 +372,20 @@ async fn run(opt: Opt) -> Result {
                                 );
 
                                 let devaddr = DevAddr::copy_from_parser(&fhdr.dev_addr());
+
+                                // fopts is a lazy iterator, so we need some boolean logic
+                                let mut fopts = false;
+                                for mac_cmd in fhdr.fopts() {
+                                    if !fopts {
+                                        print!("\t");
+                                        fopts = true;
+                                    }
+                                    print!("{:?}\t", mac_cmd);
+                                }
+                                if fopts {
+                                    println!();
+                                }
+
                                 for (index, device) in devices.iter().enumerate() {
                                     // if there is a live session, check for address match
                                     if let Some(session) = &device.session {
@@ -387,12 +402,13 @@ async fn run(opt: Opt) -> Result {
                                                     Some(&session.appskey),
                                                     fhdr.fcnt() as u32,
                                                 )?;
+
                                                 println!(
-                                                    "\tDecrypted({:x?})",
+                                                    "\tDevEui[-4..]: {:}, Decrypted({:x?})",
+                                                    &device.credentials.dev_eui[12..],
                                                     decrypted.frm_payload()
                                                 );
                                                 break;
-
                                             } else {
                                                 println!("\tFailed MIC Validation");
                                             }
@@ -400,14 +416,6 @@ async fn run(opt: Opt) -> Result {
                                     }
                                     if index == devices.len() - 1 {
                                         println!("\tEncryptedData");
-                                    }
-                                    let mut fopts = false;
-                                    for mac_cmd in fhdr.fopts() {
-                                        print!("{:?}\t", mac_cmd);
-                                        fopts = true;
-                                    }
-                                    if fopts {
-                                        println!();
                                     }
                                 }
                             }
