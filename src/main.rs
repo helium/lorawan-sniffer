@@ -4,7 +4,7 @@ use lorawan_encoding::{
     keys,
     parser::{
         parse as lorawan_parser, AsPhyPayloadBytes, DataHeader, DataPayload, EncryptedDataPayload,
-        EncryptedJoinAcceptPayload, JoinRequestPayload, PhyPayload,
+        EncryptedJoinAcceptPayload, FRMPayload, JoinRequestPayload, PhyPayload,
     },
 };
 use mio::{
@@ -403,11 +403,27 @@ async fn run(opt: Opt) -> Result {
                                                     fhdr.fcnt() as u32,
                                                 )?;
 
-                                                println!(
-                                                    "\tDevEui[-4..]: {:}, Decrypted({:x?})",
+                                                print!(
+                                                    "\tDevEui[-4..]: {:}",
                                                     &device.credentials.dev_eui[12..],
-                                                    decrypted.frm_payload()
                                                 );
+
+                                                match decrypted.frm_payload().unwrap() {
+                                                    FRMPayload::Data(data) => {
+                                                        println!(", Data: {:x?}", data);
+                                                    }
+                                                    FRMPayload::MACCommands(mac) => {
+                                                        print!(", Mac: ");
+                                                        for mac_cmd in mac.mac_commands() {
+                                                            print!("{:?}, ", mac_cmd);
+                                                        }
+                                                        println!();
+                                                    }
+                                                    FRMPayload::None => {
+                                                        println!();
+                                                    }
+                                                }
+
                                                 break;
                                             } else {
                                                 println!("\tFailed MIC Validation");
@@ -415,7 +431,7 @@ async fn run(opt: Opt) -> Result {
                                         }
                                     }
                                     if index == devices.len() - 1 {
-                                        println!("\tEncryptedData");
+                                        println!("\tCould not decrypt");
                                     }
                                 }
                             }
