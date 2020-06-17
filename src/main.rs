@@ -1,4 +1,4 @@
-use chrono::Local;
+use chrono::Utc;
 use lorawan::{
     default_crypto::DefaultFactory,
     keys,
@@ -265,7 +265,6 @@ async fn run(opt: Opt) -> Result {
             // process all the packets, including tracking Join/JoinAccept,
             // deriving session keys, and decrypting packets when possible
             for packet in packets {
-                let date = Local::now();
                 if !opt.disable_ts {
                     print!("{}  ", Utc::now().format("[%F %H:%M:%S%.3f]"));
                 }
@@ -373,6 +372,20 @@ async fn run(opt: Opt) -> Result {
                                 );
 
                                 let devaddr = DevAddr::copy_from_parser(&fhdr.dev_addr());
+
+                                // fopts is a lazy iterator, so we need some boolean logic
+                                let mut fopts = false;
+                                for mac_cmd in fhdr.fopts() {
+                                    if !fopts {
+                                        print!("\t");
+                                        fopts = true;
+                                    }
+                                    print!("{:?}\t", mac_cmd);
+                                }
+                                if fopts {
+                                    println!();
+                                }
+
                                 for (index, device) in devices.iter().enumerate() {
                                     // if there is a live session, check for address match
                                     if let Some(session) = &device.session {
@@ -402,14 +415,9 @@ async fn run(opt: Opt) -> Result {
                                     if index == devices.len() - 1 {
                                         println!("\tEncryptedData");
                                     }
-                                    let mut fopts = false;
-                                    for mac_cmd in fhdr.fopts() {
-                                        print!("{:?}\t", mac_cmd);
-                                        fopts = true;
-                                    }
-                                    if fopts {
-                                        println!();
-                                    }
+
+
+
                                 }
                             }
                             _ => panic!("Makes no sense to have decrypted data here"),

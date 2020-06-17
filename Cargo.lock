@@ -505,7 +505,7 @@ dependencies = [
 
 [[package]]
 name = "lorawan-sniffer"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "aes",
  "base64 0.12.1",
