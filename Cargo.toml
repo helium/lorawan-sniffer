@@ -7,9 +7,9 @@ edition = "2018"
 [dependencies]
 tokio = { version = "0.2", features = ["full"] }
 structopt = { version = "0.3.2", default-features = false }
-lorawan-encoding = { git = "https://github.com/ivajloip/rust-lorawan.git", branch = "master"}
+lorawan-encoding = { git = "https://github.com/ivajloip/rust-lorawan.git", rev = "f1c67e11"}
 helium-console = { git = "https://github.com/helium/helium-console-cli" }
-semtech-udp = { git = "https://github.com/lthiery/semtech-udp", rev = "6a5470287fa2704f75b90c5fbbbbbc47b11172e7" }
+semtech-udp = { git = "https://github.com/lthiery/semtech-udp", rev = "6a547028" }
 base64 = "0.12.0"
 mio = "0.6"
 aes = "0.3.2"
