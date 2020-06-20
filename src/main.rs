@@ -383,7 +383,7 @@ async fn run(opt: Opt) -> Result {
                                 let fhdr = encrypted_data.fhdr();
 
                                 println!(
-                                    "\tDevAddr: {:}, 0x{:x?}, FCnt 0x{:x?}, {}",
+                                    "\tDevAddr: {:}, {:?}, FCnt x{:x?}, {}",
                                     hex_encode_reversed(&fhdr.dev_addr().as_ref()),
                                     fhdr.fctrl(),
                                     fhdr.fcnt(),
