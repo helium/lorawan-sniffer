@@ -128,7 +128,7 @@ impl SniffedPacket {
             Pkt::Down(txpk) => match txpk.tmst {
                 semtech_udp::StringOrNum::S(_) => 0,
                 semtech_udp::StringOrNum::N(n) => n,
-            }
+            },
         };
         let data = match pkt {
             Pkt::Up(rxpk) => rxpk.data.clone(),
@@ -163,7 +163,6 @@ impl SniffedPacket {
 }
 
 use num_format::{Locale, ToFormattedString};
-
 
 async fn run(opt: Opt) -> Result {
     // try to parse the CLI iput
@@ -303,10 +302,7 @@ async fn run(opt: Opt) -> Result {
                     Direction::Down => println!(),
                 }
 
-                println!(
-                    "\ttmst: {}",
-                    packet.tmst.to_formatted_string(&Locale::en)
-                );
+                println!("\ttmst: {}", packet.tmst.to_formatted_string(&Locale::en));
 
                 match &packet.payload() {
                     PhyPayload::JoinRequest(join_request) => {
@@ -380,8 +376,7 @@ async fn run(opt: Opt) -> Result {
                     PhyPayload::Data(data) => {
                         match data {
                             DataPayload::Encrypted(encrypted_data) => {
-
-                                let fport = match encrypted_data.f_port(){
+                                let fport = match encrypted_data.f_port() {
                                     Some(fport) => format!("FPort {}", fport),
                                     None => "No FPort".to_string(),
                                 };
@@ -394,7 +389,6 @@ async fn run(opt: Opt) -> Result {
                                     fhdr.fcnt(),
                                     fport
                                 );
-
 
                                 let devaddr = DevAddr::copy_from_parser(&fhdr.dev_addr());
 
