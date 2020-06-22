@@ -1,7 +1,7 @@
 [package]
 name = "lorawan-sniffer"
-version = "0.1.5"
-authors = ["lthiery <me@louisthiery.com>"]
+version = "0.1.6"
+authors = ["lthiery <thiery.louis@gmail.com>"]
 edition = "2018"
 
 [dependencies]
@@ -19,3 +19,4 @@ serde_json = "1"
 hex = "0.4"
 toml = "0.5"
 chrono = "0.4"
+num-format = "0.4.0"

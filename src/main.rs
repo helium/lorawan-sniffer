@@ -4,7 +4,7 @@ use lorawan_encoding::{
     keys,
     parser::{
         parse as lorawan_parser, AsPhyPayloadBytes, DataHeader, DataPayload, EncryptedDataPayload,
-        EncryptedJoinAcceptPayload, JoinRequestPayload, PhyPayload,
+        EncryptedJoinAcceptPayload, FRMPayload, JoinRequestPayload, PhyPayload,
     },
 };
 use mio::{
@@ -104,6 +104,7 @@ enum Pkt<'a> {
 }
 
 struct SniffedPacket {
+    tmst: u64,
     payload: PhyPayload<Vec<u8>, DefaultFactory>,
     freq: f64,
     datr: String,
@@ -122,6 +123,13 @@ struct RxRf {
 
 impl SniffedPacket {
     fn new(pkt: Pkt) -> Result<SniffedPacket> {
+        let tmst = match pkt {
+            Pkt::Up(rxpk) => rxpk.tmst,
+            Pkt::Down(txpk) => match txpk.tmst {
+                semtech_udp::StringOrNum::S(_) => 0,
+                semtech_udp::StringOrNum::N(n) => n,
+            },
+        };
         let data = match pkt {
             Pkt::Up(rxpk) => rxpk.data.clone(),
             Pkt::Down(txpk) => txpk.data.clone(),
@@ -145,6 +153,7 @@ impl SniffedPacket {
             freq,
             datr,
             direction,
+            tmst,
         })
     }
 
@@ -152,6 +161,8 @@ impl SniffedPacket {
         &self.payload
     }
 }
+
+use num_format::{Locale, ToFormattedString};
 
 async fn run(opt: Opt) -> Result {
     // try to parse the CLI iput
@@ -291,6 +302,8 @@ async fn run(opt: Opt) -> Result {
                     Direction::Down => println!(),
                 }
 
+                println!("\ttmst: {}", packet.tmst.to_formatted_string(&Locale::en));
+
                 match &packet.payload() {
                     PhyPayload::JoinRequest(join_request) => {
                         println!(
@@ -363,12 +376,18 @@ async fn run(opt: Opt) -> Result {
                     PhyPayload::Data(data) => {
                         match data {
                             DataPayload::Encrypted(encrypted_data) => {
+                                let fport = match encrypted_data.f_port() {
+                                    Some(fport) => format!("FPort {}", fport),
+                                    None => "No FPort".to_string(),
+                                };
                                 let fhdr = encrypted_data.fhdr();
+
                                 println!(
-                                    "\tDevAddr: {:}, {:x?}, FCnt({:x?})",
+                                    "\tDevAddr: {:}, {:?}, FCnt x{:x?}, {}",
                                     hex_encode_reversed(&fhdr.dev_addr().as_ref()),
                                     fhdr.fctrl(),
                                     fhdr.fcnt(),
+                                    fport
                                 );
 
                                 let devaddr = DevAddr::copy_from_parser(&fhdr.dev_addr());
@@ -403,11 +422,27 @@ async fn run(opt: Opt) -> Result {
                                                     fhdr.fcnt() as u32,
                                                 )?;
 
-                                                println!(
-                                                    "\tDevEui[-4..]: {:}, Decrypted({:x?})",
+                                                print!(
+                                                    "\tDevEui[-4..]: {:}",
                                                     &device.credentials.dev_eui[12..],
-                                                    decrypted.frm_payload()
                                                 );
+
+                                                match decrypted.frm_payload().unwrap() {
+                                                    FRMPayload::Data(data) => {
+                                                        println!(", Data: {:x?}", data);
+                                                    }
+                                                    FRMPayload::MACCommands(mac) => {
+                                                        print!(", Mac: ");
+                                                        for mac_cmd in mac.mac_commands() {
+                                                            print!("{:?}, ", mac_cmd);
+                                                        }
+                                                        println!();
+                                                    }
+                                                    FRMPayload::None => {
+                                                        println!();
+                                                    }
+                                                }
+
                                                 break;
                                             } else {
                                                 println!("\tFailed MIC Validation");
@@ -415,7 +450,7 @@ async fn run(opt: Opt) -> Result {
                                         }
                                     }
                                     if index == devices.len() - 1 {
-                                        println!("\tEncryptedData");
+                                        println!("\tCould not decrypt");
                                     }
                                 }
                             }
