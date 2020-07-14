@@ -12,9 +12,13 @@ If you load device information into the utility, session keys are derived during
 
 ## Usage
 
-The utility may be deployed in two ways:
-* if a host exists which mirrors all UDP packets (such as the Helium Miner), the utility can do a simple connection to this host
-* the utility can act as a passthrough; connect the packet forwarder to this utility (`0.0.0.0:1680`) and in turn, connect this utility to some host
+The Sniffer only works if you enable the "mirror port" on the Miner. In the file `/opt/miner/releases/0.1.0/sys.config` you want to add  `{radio_mirror_port, 1681},` after the line  `{use_ebus, true},`. Or in sed speak:
+
+```bash
+sed -i '/{use_ebus, true},/ a \ \ \ {radio_mirror_port, 1681},' /opt/miner/releases/0.1.0/sys.config
+```
+
+The utility can also act as a passthrough; connect the packet forwarder to this utility (`0.0.0.0:1680`) and in turn, connect this utility to some host
 
 Either way, starting up the utility is identical:
 
