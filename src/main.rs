@@ -11,6 +11,7 @@ use mio::{
     net::UdpSocket,
     {Events, Poll, PollOpt, Ready, Token},
 };
+use semtech_udp::{parser::Parser, Down, Packet, Up};
 use serde_derive::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use std::{process, time::Duration};
@@ -99,8 +100,8 @@ async fn main() -> Result {
 mod config;
 
 enum Pkt<'a> {
-    Up(&'a semtech_udp::RxPk),
-    Down(&'a semtech_udp::TxPk),
+    Up(&'a semtech_udp::push_data::RxPk),
+    Down(&'a semtech_udp::pull_resp::TxPk),
 }
 
 struct SniffedPacket {
@@ -235,18 +236,14 @@ async fn run(opt: Opt) -> Result {
                             radio_socket.send_to(&buffer[0..num_recv], &radio_client)?;
                         }
                         if let Ok(msg) = semtech_udp::Packet::parse(&buffer, num_recv) {
-                            match msg.data() {
-                                semtech_udp::PacketData::PullResp(data) => {
-                                    packets.push(SniffedPacket::new(Pkt::Down(&data.txpk))?)
-                                }
-                                semtech_udp::PacketData::PushData(data) => {
-                                    if let Some(rxpks) = &data.rxpk {
-                                        for rxpk in rxpks {
-                                            packets.push(SniffedPacket::new(Pkt::Up(rxpk))?)
-                                        }
+                            if let Packet::Up(Up::PushData(push_data)) = msg {
+                                if let Some(rxpks) = &push_data.data.rxpk {
+                                    for rxpk in rxpks {
+                                        packets.push(SniffedPacket::new(Pkt::Up(rxpk))?)
                                     }
                                 }
-                                _ => (),
+                            } else if let Packet::Down(Down::PullResp(pull_resp)) = msg {
+                                packets.push(SniffedPacket::new(Pkt::Down(&pull_resp.data.txpk))?)
                             }
                         } else {
                             println!("Received frame that is not a valid Semtech UDP frame");
@@ -262,8 +259,8 @@ async fn run(opt: Opt) -> Result {
                     }
                     let msg = semtech_udp::Packet::parse(&buffer, num_recv)?;
                     buffer = [0; 1024];
-                    if let semtech_udp::PacketData::PushData(data) = msg.data() {
-                        if let Some(rxpks) = &data.rxpk {
+                    if let Packet::Up(Up::PushData(push_data)) = msg {
+                        if let Some(rxpks) = &push_data.data.rxpk {
                             for rxpk in rxpks {
                                 packets.push(SniffedPacket::new(Pkt::Up(rxpk))?)
                             }
