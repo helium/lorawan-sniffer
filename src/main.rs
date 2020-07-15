@@ -43,6 +43,10 @@ struct Opt {
     #[structopt(long)]
     enable_tmst: bool,
 
+    /// enable raw payload output
+    #[structopt(long)]
+    enable_raw_payload: bool,
+
     /// Outgoing socket
     #[structopt(short, long, default_value = "3400")]
     out_port: u16,
@@ -309,6 +313,10 @@ async fn run(opt: Opt) -> Result {
 
                 match &packet.payload() {
                     PhyPayload::JoinRequest(join_request) => {
+                        if opt.enable_raw_payload {
+                            println!("\tPhyPayload: {:?} ", join_request.as_bytes())
+                        }
+
                         println!(
                             "\t  AppEui: {:} DevEui: {:} DevNonce: {:}",
                             hex_encode_reversed(join_request.app_eui().as_ref()),
@@ -332,6 +340,10 @@ async fn run(opt: Opt) -> Result {
                         }
                     }
                     PhyPayload::JoinAccept(join_accept) => {
+                        if opt.enable_raw_payload {
+                            println!("\tPhyPayload: {:?} ", join_accept.as_bytes())
+                        }
+
                         for device in &mut devices {
                             let app_key = key_as_string_to_aes128(&device.credentials.app_key)?;
                             let mut copy: Vec<u8> = Vec::new();
@@ -377,6 +389,10 @@ async fn run(opt: Opt) -> Result {
                         }
                     }
                     PhyPayload::Data(data) => {
+                        if opt.enable_raw_payload {
+                            println!("\tPhyPayload: {:?} ", data.as_bytes())
+                        }
+
                         match data {
                             DataPayload::Encrypted(encrypted_data) => {
                                 let fport = match encrypted_data.f_port() {
