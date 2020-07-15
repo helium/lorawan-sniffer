@@ -39,6 +39,10 @@ struct Opt {
     #[structopt(long)]
     disable_ts: bool,
 
+    /// enable tmst on output
+    #[structopt(long)]
+    enable_tmst: bool,
+
     /// Outgoing socket
     #[structopt(short, long, default_value = "3400")]
     out_port: u16,
@@ -299,7 +303,9 @@ async fn run(opt: Opt) -> Result {
                     Direction::Down => println!(),
                 }
 
-                println!("\ttmst: {}", packet.tmst.to_formatted_string(&Locale::en));
+                if opt.enable_tmst {
+                    println!("\ttmst: {}", packet.tmst.to_formatted_string(&Locale::en));
+                }
 
                 match &packet.payload() {
                     PhyPayload::JoinRequest(join_request) => {
