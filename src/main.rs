@@ -247,11 +247,41 @@ async fn run(opt: Opt) -> Result {
                             if let Packet::Up(Up::PushData(push_data)) = msg {
                                 if let Some(rxpks) = &push_data.data.rxpk {
                                     for rxpk in rxpks {
-                                        packets.push(SniffedPacket::new(Pkt::Up(rxpk))?)
+                                        match SniffedPacket::new(Pkt::Up(rxpk)) {
+                                            Ok(packet) => packets.push(packet),
+                                            Err(e) => {
+                                                if !opt.disable_ts {
+                                                    print!(
+                                                        "{}  ",
+                                                        Utc::now().format("[%F %H:%M:%S%.3f]\t")
+                                                    );
+                                                }
+                                                println!(
+                                                    "SnifferPacket error: {}, with bytes: {:?}",
+                                                    e,
+                                                    base64::decode(&rxpk.data)
+                                                );
+                                            }
+                                        }
                                     }
                                 }
                             } else if let Packet::Down(Down::PullResp(pull_resp)) = msg {
-                                packets.push(SniffedPacket::new(Pkt::Down(&pull_resp.data.txpk))?)
+                                match SniffedPacket::new(Pkt::Down(&pull_resp.data.txpk)) {
+                                    Ok(packet) => packets.push(packet),
+                                    Err(e) => {
+                                        if !opt.disable_ts {
+                                            print!(
+                                                "{}  ",
+                                                Utc::now().format("[%F %H:%M:%S%.3f]\t")
+                                            );
+                                        }
+                                        println!(
+                                            "SnifferPacket error: {}, with bytes: {:?}",
+                                            e,
+                                            base64::decode(&pull_resp.data.txpk.data)
+                                        );
+                                    }
+                                }
                             }
                         } else {
                             println!("Received frame that is not a valid Semtech UDP frame");

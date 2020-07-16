@@ -1,6 +1,6 @@
 [package]
 name = "lorawan-sniffer"
-version = "0.1.7"
+version = "0.1.8"
 authors = ["lthiery <thiery.louis@gmail.com>"]
 edition = "2018"
 
