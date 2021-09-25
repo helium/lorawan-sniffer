@@ -11,7 +11,7 @@ use mio::{
     net::UdpSocket,
     {Events, Poll, PollOpt, Ready, Token},
 };
-use semtech_udp::{parser::Parser, Down, Packet, Up};
+use semtech_udp::{parser::Parser, DataRate, Down, Packet, Up};
 use serde_derive::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use std::{process, time::Duration};
@@ -113,10 +113,10 @@ enum Pkt<'a> {
 }
 
 struct SniffedPacket {
-    tmst: u64,
+    tmst: u32,
     payload: PhyPayload<Vec<u8>, DefaultFactory>,
     freq: f64,
-    datr: String,
+    datr: DataRate,
     direction: Direction,
 }
 
@@ -126,32 +126,36 @@ enum Direction {
 }
 
 struct RxRf {
-    lsnr: f64,
-    rssi: i64,
+    lsnr: f32,
+    rssi: i32,
 }
 
 impl SniffedPacket {
     fn new(pkt: Pkt) -> Result<SniffedPacket> {
         let tmst = match pkt {
-            Pkt::Up(rxpk) => rxpk.tmst,
+            Pkt::Up(rxpk) => *rxpk.get_timestamp(),
             Pkt::Down(txpk) => match txpk.tmst {
                 semtech_udp::StringOrNum::S(_) => 0,
                 semtech_udp::StringOrNum::N(n) => n,
             },
         };
         let data = match pkt {
-            Pkt::Up(rxpk) => rxpk.data.clone(),
+            Pkt::Up(rxpk) => rxpk.get_data().clone(),
             Pkt::Down(txpk) => txpk.data.clone(),
         };
-        let bytes = base64::decode(data).unwrap();
+        let bytes = base64::decode(&data).unwrap();
 
         let (datr, freq, direction) = match pkt {
             Pkt::Up(rxpk) => (
-                rxpk.datr.clone(),
-                rxpk.freq,
+                rxpk.get_datarate(),
+                *rxpk.get_frequency(),
                 Direction::Up(RxRf {
-                    lsnr: rxpk.lsnr,
-                    rssi: rxpk.rssi,
+                    lsnr: rxpk.get_snr(),
+                    rssi: if let Some(rssi) = rxpk.get_signal_rssi() {
+                        rssi
+                    } else {
+                        rxpk.get_channel_rssi()
+                    },
                 }),
             ),
             Pkt::Down(txpk) => (txpk.datr.clone(), txpk.freq, Direction::Down),
@@ -241,9 +245,9 @@ async fn run(opt: Opt) -> Result {
                         let num_recv = socket.recv(&mut buffer)?;
                         // forward the packet along
                         if let Some(radio_client) = &radio_client {
-                            radio_socket.send_to(&buffer[0..num_recv], &radio_client)?;
+                            radio_socket.send_to(&buffer[0..num_recv], radio_client)?;
                         }
-                        if let Ok(msg) = semtech_udp::Packet::parse(&buffer, num_recv) {
+                        if let Ok(msg) = semtech_udp::Packet::parse(&buffer[..num_recv]) {
                             if let Packet::Up(Up::PushData(push_data)) = msg {
                                 if let Some(rxpks) = &push_data.data.rxpk {
                                     for rxpk in rxpks {
@@ -259,7 +263,7 @@ async fn run(opt: Opt) -> Result {
                                                 println!(
                                                     "SnifferPacket error: {}, with bytes: {:?}",
                                                     e,
-                                                    base64::decode(&rxpk.data)
+                                                    base64::decode(&rxpk.get_data())
                                                 );
                                             }
                                         }
@@ -295,7 +299,7 @@ async fn run(opt: Opt) -> Result {
                     if let Some(socket) = &mut miner_socket {
                         socket.send(&buffer[0..num_recv])?;
                     }
-                    let msg = semtech_udp::Packet::parse(&buffer, num_recv)?;
+                    let msg = semtech_udp::Packet::parse(&buffer[..num_recv])?;
                     buffer = [0; 1024];
                     if let Packet::Up(Up::PushData(push_data)) = msg {
                         if let Some(rxpks) = &push_data.data.rxpk {
@@ -316,7 +320,7 @@ async fn run(opt: Opt) -> Result {
                 }
 
                 print!(
-                    "{}\t{:.1} MHz \t{:}",
+                    "{}\t{:.1} MHz \t{:?}",
                     match &packet.payload() {
                         PhyPayload::JoinRequest(_) => "JoinRequest",
                         PhyPayload::JoinAccept(_) => "JoinAccept",
@@ -433,7 +437,7 @@ async fn run(opt: Opt) -> Result {
 
                                 println!(
                                     "\tDevAddr: {:}, {:?}, FCnt x{:x?}, {}",
-                                    hex_encode_reversed(&fhdr.dev_addr().as_ref()),
+                                    hex_encode_reversed(fhdr.dev_addr().as_ref()),
                                     fhdr.fctrl(),
                                     fhdr.fcnt(),
                                     fport
