@@ -30,7 +30,7 @@ pub fn load(path: &str) -> Result<Config> {
 
         let config = Config::new(key);
 
-        file.write_all(&toml::to_string(&config)?.as_bytes())?;
+        file.write_all(toml::to_string(&config)?.as_bytes())?;
     }
 
     let contents = fs::read_to_string(path)?;
