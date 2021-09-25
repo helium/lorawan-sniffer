@@ -48,7 +48,7 @@ jobs:
           RELEASE: lorawan-sniffer-${{ steps.name_release.outputs.RELEASE }}
         run: |
           mkdir $RELEASE
-          mv target/release/lorawan-sniffer- $RELEASE/
+          mv target/release/lorawan-sniffer $RELEASE/
           cp LICENSE $RELEASE/
           tar -zcvf $RELEASE.tar.gz $RELEASE/
       - name: Push Release
