@@ -143,7 +143,7 @@ impl SniffedPacket {
             Pkt::Up(rxpk) => rxpk.get_data().clone(),
             Pkt::Down(txpk) => txpk.data.clone(),
         };
-        let bytes = base64::decode(data).unwrap();
+        let bytes = base64::decode(&data).unwrap();
 
         let (datr, freq, direction) = match pkt {
             Pkt::Up(rxpk) => (
