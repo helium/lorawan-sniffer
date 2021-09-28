@@ -54,6 +54,10 @@ struct Opt {
     /// Incoming socket
     #[structopt(short, long, default_value = "1600")]
     in_port: u16,
+
+    /// Output all frames
+    #[structopt(short, long)]
+    debug: bool,
 }
 
 pub type Result<T = ()> = std::result::Result<T, Box<dyn std::error::Error>>;
@@ -139,11 +143,10 @@ impl SniffedPacket {
                 semtech_udp::StringOrNum::N(n) => n,
             },
         };
-        let data = match pkt {
+        let bytes = match pkt {
             Pkt::Up(rxpk) => rxpk.get_data().clone(),
             Pkt::Down(txpk) => txpk.data.clone(),
         };
-        let bytes = base64::decode(&data).unwrap();
 
         let (datr, freq, direction) = match pkt {
             Pkt::Up(rxpk) => (
@@ -248,6 +251,9 @@ async fn run(opt: Opt) -> Result {
                             radio_socket.send_to(&buffer[0..num_recv], radio_client)?;
                         }
                         if let Ok(msg) = semtech_udp::Packet::parse(&buffer[..num_recv]) {
+                            if opt.debug {
+                                println!("{:?}", msg);
+                            }
                             if let Packet::Up(Up::PushData(push_data)) = msg {
                                 if let Some(rxpks) = &push_data.data.rxpk {
                                     for rxpk in rxpks {
@@ -300,6 +306,9 @@ async fn run(opt: Opt) -> Result {
                         socket.send(&buffer[0..num_recv])?;
                     }
                     let msg = semtech_udp::Packet::parse(&buffer[..num_recv])?;
+                    if opt.debug {
+                        println!("{:?}", msg);
+                    }
                     buffer = [0; 1024];
                     if let Packet::Up(Up::PushData(push_data)) = msg {
                         if let Some(rxpks) = &push_data.data.rxpk {
