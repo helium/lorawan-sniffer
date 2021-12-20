@@ -139,11 +139,10 @@ impl SniffedPacket {
                 semtech_udp::StringOrNum::N(n) => n,
             },
         };
-        let data = match pkt {
+        let bytes = match pkt {
             Pkt::Up(rxpk) => rxpk.get_data().clone(),
             Pkt::Down(txpk) => txpk.data.clone(),
         };
-        let bytes = base64::decode(&data).unwrap();
 
         let (datr, freq, direction) = match pkt {
             Pkt::Up(rxpk) => (
@@ -395,9 +394,10 @@ async fn run(opt: Opt) -> Result {
                                     hex_encode_reversed(decrypted_join_accept.dev_addr().as_ref()),
                                 );
                                 println!(
-                                    "\tDL Settings: {:x?} RxDelay: {:x?}",
+                                    "\tDL Settings: {:x?} RxDelay: {:x?}, CFList: {:x?}",
                                     decrypted_join_accept.dl_settings(),
-                                    decrypted_join_accept.rx_delay()
+                                    decrypted_join_accept.rx_delay(),
+                                    decrypted_join_accept.c_f_list(),
                                 );
 
                                 if let Some(join_request) = &device.last_join_request {
@@ -452,7 +452,7 @@ async fn run(opt: Opt) -> Result {
                                         print!("\t");
                                         fopts = true;
                                     }
-                                    print!("{:?}\t", mac_cmd);
+                                    print!("{:x?}\t", mac_cmd);
                                 }
                                 if fopts {
                                     println!();
