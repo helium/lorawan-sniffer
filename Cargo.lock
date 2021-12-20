@@ -736,7 +736,7 @@ dependencies = [
 [[package]]
 name = "lorawan-encoding"
 version = "0.6.2"
-source = "git+https://github.com/ivajloip/rust-lorawan.git#55d34a5766f20f644db3357346423efdd2163010"
+source = "git+https://github.com/helium/rust-lorawan.git?branch=lthiery/cflist-types#44387f156221548da85679a73047692678ef7937"
 dependencies = [
  "aes",
  "cmac",

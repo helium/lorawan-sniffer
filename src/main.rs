@@ -2,6 +2,7 @@ use chrono::Utc;
 use lorawan_encoding::{
     default_crypto::DefaultFactory,
     keys,
+    maccommands::{MacCommand, MacCommandIterator},
     parser::{
         parse as lorawan_parser, AsPhyPayloadBytes, DataHeader, DataPayload, EncryptedDataPayload,
         EncryptedJoinAcceptPayload, FRMPayload, JoinRequestPayload, PhyPayload,
@@ -175,6 +176,25 @@ impl SniffedPacket {
 }
 
 use num_format::{Locale, ToFormattedString};
+
+fn print_mac(mac_cmd_iterator: &mut MacCommandIterator, with_indent: bool) {
+    for mac_cmd in mac_cmd_iterator {
+        if with_indent {
+            print!("\t")
+        }
+        if let MacCommand::LinkADRReq(adr_req) = mac_cmd {
+            println!(
+                "LinkAdrReqPayload(DR({:x?}), TxPower({:x?}), {:x?}, {:x?})",
+                adr_req.data_rate(),
+                adr_req.tx_power(),
+                adr_req.channel_mask(),
+                adr_req.redundancy(),
+            );
+        } else {
+            println!("{:x?}", mac_cmd);
+        }
+    }
+}
 
 async fn run(opt: Opt) -> Result {
     // try to parse the CLI iput
@@ -393,12 +413,20 @@ async fn run(opt: Opt) -> Result {
                                     hex_encode_reversed(decrypted_join_accept.net_id().as_ref()),
                                     hex_encode_reversed(decrypted_join_accept.dev_addr().as_ref()),
                                 );
-                                println!(
-                                    "\tDL Settings: {:x?} RxDelay: {:x?}, CFList: {:x?}",
-                                    decrypted_join_accept.dl_settings(),
-                                    decrypted_join_accept.rx_delay(),
-                                    decrypted_join_accept.c_f_list(),
-                                );
+                                if let Some(c_f_list) = decrypted_join_accept.c_f_list() {
+                                    println!(
+                                        "\tDL Settings: {:x?} RxDelay: {:x?}, CFList: {:x?}",
+                                        decrypted_join_accept.dl_settings(),
+                                        decrypted_join_accept.rx_delay(),
+                                        c_f_list
+                                    );
+                                } else {
+                                    println!(
+                                        "\tDL Settings: {:x?} RxDelay: {:x?}",
+                                        decrypted_join_accept.dl_settings(),
+                                        decrypted_join_accept.rx_delay(),
+                                    );
+                                }
 
                                 if let Some(join_request) = &device.last_join_request {
                                     let newskey = decrypted_join_accept
@@ -446,17 +474,7 @@ async fn run(opt: Opt) -> Result {
                                 let devaddr = DevAddr::copy_from_parser(&fhdr.dev_addr());
 
                                 // fopts is a lazy iterator, so we need some boolean logic
-                                let mut fopts = false;
-                                for mac_cmd in fhdr.fopts() {
-                                    if !fopts {
-                                        print!("\t");
-                                        fopts = true;
-                                    }
-                                    print!("{:x?}\t", mac_cmd);
-                                }
-                                if fopts {
-                                    println!();
-                                }
+                                print_mac(&mut fhdr.fopts(), true);
 
                                 for (index, device) in devices.iter().enumerate() {
                                     // if there is a live session, check for address match
@@ -486,9 +504,7 @@ async fn run(opt: Opt) -> Result {
                                                     }
                                                     FRMPayload::MACCommands(mac) => {
                                                         print!(", Mac: ");
-                                                        for mac_cmd in mac.mac_commands() {
-                                                            print!("{:?}, ", mac_cmd);
-                                                        }
+                                                        print_mac(&mut mac.mac_commands(), true);
                                                         println!();
                                                     }
                                                     FRMPayload::None => {
