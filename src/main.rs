@@ -404,9 +404,10 @@ async fn run(opt: Opt) -> Result {
                                     hex_encode_reversed(decrypted_join_accept.dev_addr().as_ref()),
                                 );
                                 println!(
-                                    "\tDL Settings: {:x?} RxDelay: {:x?}",
+                                    "\tDL Settings: {:x?} RxDelay: {:x?}, CFList: {:x?}",
                                     decrypted_join_accept.dl_settings(),
-                                    decrypted_join_accept.rx_delay()
+                                    decrypted_join_accept.rx_delay(),
+                                    decrypted_join_accept.c_f_list(),
                                 );
 
                                 if let Some(join_request) = &device.last_join_request {
@@ -461,7 +462,7 @@ async fn run(opt: Opt) -> Result {
                                         print!("\t");
                                         fopts = true;
                                     }
-                                    print!("{:?}\t", mac_cmd);
+                                    print!("{:x?}\t", mac_cmd);
                                 }
                                 if fopts {
                                     println!();
