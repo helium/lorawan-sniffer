@@ -2,7 +2,7 @@
 name = "lorawan-sniffer"
 version = "0.2.3-alpha.0"
 authors = ["lthiery <thiery.louis@gmail.com>"]
-edition = "2018"
+edition = "2021"
 publish = false
 
 [dependencies]
