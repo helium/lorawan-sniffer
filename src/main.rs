@@ -15,7 +15,7 @@ use mio::{
 use semtech_udp::{parser::Parser, DataRate, Down, Packet, Up};
 use serde::{Deserialize, Serialize, Serializer};
 use std::net::SocketAddr;
-use std::{process, time::Duration};
+use std::time::Duration;
 use structopt::StructOpt;
 
 const MINER: Token = Token(0);
@@ -47,10 +47,6 @@ struct Opt {
     /// enable raw payload output
     #[structopt(long)]
     enable_raw_payload: bool,
-
-    /// Outgoing socket
-    #[structopt(short, long, default_value = "3400")]
-    out_port: u16,
 
     /// Incoming socket
     #[structopt(short, long, default_value = "1600")]
@@ -107,9 +103,8 @@ impl Device {
 #[tokio::main]
 async fn main() -> Result {
     let cli = Opt::from_args();
-    if let Err(e) = run(cli).await {
+    while let Err(e) = run(&cli).await {
         println!("error: {}", e);
-        process::exit(1);
     }
     Ok(())
 }
@@ -205,24 +200,21 @@ fn print_mac(mac_cmd_iterator: &mut MacCommandIterator, with_indent: bool) {
     }
 }
 
-async fn run(opt: Opt) -> Result {
+async fn run(opt: &Opt) -> Result {
     // try to parse the CLI iput
-    let mut miner_socket = if let Some(host) = opt.host {
+    let mut miner_socket = if let Some(host) = &opt.host {
         let miner_server = host.parse()?;
-        let socket_addr = SocketAddr::from(([0, 0, 0, 0], opt.out_port));
+        let socket_addr = SocketAddr::from(([0, 0, 0, 0], 0));
         let socket = UdpSocket::bind(&socket_addr)?;
         // "connecting" filters for only frames from the server
         socket.connect(miner_server)?;
-        // send something so that server can know about us
-        socket.send(&[0])?;
         println!("Connected");
-
         Some(socket)
     } else {
         None
     };
 
-    let mut writer = if let Some(path) = opt.log_trace {
+    let mut writer = if let Some(path) = &opt.log_trace {
         Some(csv::Writer::from_path(path)?)
     } else {
         None
