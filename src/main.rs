@@ -13,7 +13,7 @@ use mio::{
     {Events, Poll, PollOpt, Ready, Token},
 };
 use semtech_udp::{parser::Parser, DataRate, Down, Packet, Up};
-use serde_derive::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, Serializer};
 use std::net::SocketAddr;
 use std::{process, time::Duration};
 use structopt::StructOpt;
@@ -59,6 +59,10 @@ struct Opt {
     /// Output all frames
     #[structopt(short, long)]
     debug: bool,
+
+    /// Output all frames
+    #[structopt(short, long)]
+    log_trace: Option<std::path::PathBuf>,
 }
 
 pub type Result<T = ()> = std::result::Result<T, Box<dyn std::error::Error>>;
@@ -117,22 +121,22 @@ enum Pkt<'a> {
     Down(&'a semtech_udp::pull_resp::TxPk),
 }
 
+#[derive(Serialize)]
 struct SniffedPacket {
     tmst: u32,
+    #[serde(serialize_with = "serialize_payload")]
     payload: PhyPayload<Vec<u8>, DefaultFactory>,
     freq: f64,
     datr: DataRate,
     direction: Direction,
+    lsnr: Option<f32>,
+    rssi: Option<i32>,
 }
 
+#[derive(Serialize)]
 enum Direction {
-    Up(RxRf),
+    Up,
     Down,
-}
-
-struct RxRf {
-    lsnr: f32,
-    rssi: i32,
 }
 
 impl SniffedPacket {
@@ -149,20 +153,19 @@ impl SniffedPacket {
             Pkt::Down(txpk) => txpk.data.clone(),
         };
 
-        let (datr, freq, direction) = match pkt {
+        let (datr, freq, direction, lsnr, rssi) = match pkt {
             Pkt::Up(rxpk) => (
                 rxpk.get_datarate(),
                 *rxpk.get_frequency(),
-                Direction::Up(RxRf {
-                    lsnr: rxpk.get_snr(),
-                    rssi: if let Some(rssi) = rxpk.get_signal_rssi() {
-                        rssi
-                    } else {
-                        rxpk.get_channel_rssi()
-                    },
+                Direction::Up,
+                Some(rxpk.get_snr()),
+                Some(if let Some(rssi) = rxpk.get_signal_rssi() {
+                    rssi
+                } else {
+                    rxpk.get_channel_rssi()
                 }),
             ),
-            Pkt::Down(txpk) => (txpk.datr.clone(), txpk.freq, Direction::Down),
+            Pkt::Down(txpk) => (txpk.datr.clone(), txpk.freq, Direction::Down, None, None),
         };
 
         Ok(SniffedPacket {
@@ -171,6 +174,8 @@ impl SniffedPacket {
             datr,
             direction,
             tmst,
+            lsnr,
+            rssi,
         })
     }
 
@@ -213,6 +218,12 @@ async fn run(opt: Opt) -> Result {
         println!("Connected");
 
         Some(socket)
+    } else {
+        None
+    };
+
+    let mut writer = if let Some(path) = opt.log_trace {
+        Some(csv::Writer::from_path(path)?)
     } else {
         None
     };
@@ -347,6 +358,9 @@ async fn run(opt: Opt) -> Result {
                 if !opt.disable_ts {
                     print!("{}  ", Utc::now().format("[%F %H:%M:%S%.3f]"));
                 }
+                if let Some(wtr) = &mut writer {
+                    wtr.serialize(&packet)?;
+                }
 
                 print!(
                     "{}\t{:.1} MHz \t{:?}",
@@ -364,10 +378,10 @@ async fn run(opt: Opt) -> Result {
                     packet.freq,
                     packet.datr
                 );
-
-                match &packet.direction {
-                    Direction::Up(data) => println!("\tRSSI: {:}\tLSNR: {:}", data.rssi, data.lsnr),
-                    Direction::Down => println!(),
+                if let (Some(lsnr), Some(rssi)) = (&packet.lsnr, &packet.rssi) {
+                    println!("\tRSSI: {:}\tLSNR: {:}", rssi, lsnr);
+                } else {
+                    println!();
                 }
 
                 if opt.enable_tmst {
@@ -537,6 +551,9 @@ async fn run(opt: Opt) -> Result {
                         }
                     }
                 }
+                if let Some(wtr) = &mut writer {
+                    wtr.flush()?;
+                }
             }
         }
     }
@@ -607,4 +624,15 @@ fn key_as_string_to_aes128(input: &str) -> Result<keys::AES128> {
         key_binary[15],
     ];
     Ok(keys::AES128(key))
+}
+
+fn serialize_payload<S>(
+    payload: &PhyPayload<Vec<u8>, DefaultFactory>,
+    s: S,
+) -> std::result::Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    let base64 = base64::encode(payload.as_ref());
+    s.serialize_str(&base64)
 }
