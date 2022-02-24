@@ -11,7 +11,7 @@ const RADIO: Token = Token(1);
 
 #[derive(Debug, StructOpt)]
 pub struct Sniff {
-    /// IP address and port of miner mirror port
+    /// IP address and port of miner or light gateway
     /// (eg: 192.168.1.30:1681)
     #[structopt(short, long)]
     host: Option<String>,
