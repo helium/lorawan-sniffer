@@ -172,9 +172,8 @@ pub fn process_packet(
                     // fopts is a lazy iterator, so we need some boolean logic
                     print_mac(&mut fhdr.fopts(), true);
 
-                    let mut index = 0;
                     let len = devices.len();
-                    for device in &mut *devices {
+                    for (index, device) in (*devices).iter_mut().enumerate() {
                         // if there is a live session, check for address match
                         if let Some(session) = &device.session {
                             if session.devaddr == devaddr {
@@ -217,7 +216,6 @@ pub fn process_packet(
                         if index == len - 1 {
                             println!("\tCould not decrypt");
                         }
-                        index += 1;
                     }
                 }
                 _ => panic!("Makes no sense to have decrypted data here"),

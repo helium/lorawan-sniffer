@@ -35,7 +35,7 @@ impl Replay {
         };
 
         let mut iter = reader.deserialize();
-        while let Some(result) = iter.next() {
+        for result in iter.by_ref() {
             let packet: SniffedPacket = result?;
             process_packet(
                 &mut devices,
