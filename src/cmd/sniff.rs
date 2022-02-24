@@ -112,7 +112,12 @@ impl Sniff {
                                     if let Some(rxpks) = &push_data.data.rxpk {
                                         for rxpk in rxpks {
                                             match SniffedPacket::new(Pkt::Up(rxpk)) {
-                                                Ok(packet) => packets.push(packet),
+                                                Ok(packet) => {
+                                                    if let Some(wtr) = &mut writer {
+                                                        wtr.serialize(&packet)?;
+                                                    }
+                                                    packets.push(packet)
+                                                }
                                                 Err(e) => {
                                                     if !self.disable_ts {
                                                         print!(
@@ -132,7 +137,12 @@ impl Sniff {
                                     }
                                 } else if let Packet::Down(Down::PullResp(pull_resp)) = msg {
                                     match SniffedPacket::new(Pkt::Down(&pull_resp.data.txpk)) {
-                                        Ok(packet) => packets.push(packet),
+                                        Ok(packet) => {
+                                            if let Some(wtr) = &mut writer {
+                                                wtr.serialize(&packet)?;
+                                            }
+                                            packets.push(packet)
+                                        }
                                         Err(e) => {
                                             if !self.disable_ts {
                                                 print!(
