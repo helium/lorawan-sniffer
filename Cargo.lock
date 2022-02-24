@@ -779,9 +779,9 @@ dependencies = [
 
 [[package]]
 name = "lorawan-sniffer"
-version = "0.2.3-alpha.0"
+version = "0.2.3"
 dependencies = [
- "base64 0.13.0",
+ "base64 0.9.3",
  "chrono",
  "csv",
  "helium-console",
