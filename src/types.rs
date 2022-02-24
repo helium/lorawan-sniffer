@@ -1,4 +1,4 @@
-use super::{Deserialize, Result, Serialize, Serializer};
+use super::{Deserialize, Deserializer, Result, Serialize, Serializer};
 
 pub use lorawan_encoding::{
     default_crypto::DefaultFactory,
@@ -12,7 +12,7 @@ pub use lorawan_encoding::{
 
 pub use semtech_udp::{parser::Parser, DataRate, Down, Packet, Up};
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Clone)]
 pub struct DevAddr([u8; 4]);
 
 impl DevAddr {
@@ -54,10 +54,13 @@ pub enum Pkt<'a> {
     Down(&'a semtech_udp::pull_resp::TxPk),
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct SniffedPacket {
     pub tmst: u32,
-    #[serde(serialize_with = "serialize_payload")]
+    #[serde(
+        serialize_with = "serialize_payload",
+        deserialize_with = "deserialize_payload"
+    )]
     pub payload: PhyPayload<Vec<u8>, DefaultFactory>,
     pub freq: f64,
     pub datr: DataRate,
@@ -66,7 +69,7 @@ pub struct SniffedPacket {
     pub rssi: Option<i32>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub enum Direction {
     Up,
     Down,
@@ -147,4 +150,14 @@ where
 {
     let base64 = base64::encode(payload.as_ref());
     s.serialize_str(&base64)
+}
+
+fn deserialize_payload<'de, D>(
+    deserializer: D,
+) -> std::result::Result<PhyPayload<Vec<u8>, DefaultFactory>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let s: &str = Deserialize::deserialize(deserializer).unwrap();
+    Ok(lorawan_encoding::parser::parse(base64::decode(s).unwrap()).unwrap())
 }
