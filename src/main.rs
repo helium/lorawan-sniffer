@@ -24,7 +24,6 @@ async fn main() -> Result {
     Ok(())
 }
 
-use num_format::Locale::en;
 use num_format::{Locale, ToFormattedString};
 
 pub fn process_packet(
@@ -157,11 +156,7 @@ pub fn process_packet(
                         Some(fport) => format!("FPort {}", fport),
                         None => "No FPort".to_string(),
                     };
-                    let confirmed = if encrypted_data.is_confirmed() {
-                        "Confirmed"
-                    } else {
-                        "Unconfirmed"
-                    };
+
                     let fhdr = encrypted_data.fhdr();
                     let ack = fhdr.fctrl().ack();
                     let adr = fhdr.fctrl().adr();
