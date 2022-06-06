@@ -24,6 +24,7 @@ async fn main() -> Result {
     Ok(())
 }
 
+use num_format::Locale::en;
 use num_format::{Locale, ToFormattedString};
 
 pub fn process_packet(
@@ -150,19 +151,25 @@ pub fn process_packet(
             if enable_raw_payload {
                 println!("\tPhyPayload: {:?} ", data.as_bytes())
             }
-
             match data {
                 DataPayload::Encrypted(encrypted_data) => {
                     let fport = match encrypted_data.f_port() {
                         Some(fport) => format!("FPort {}", fport),
                         None => "No FPort".to_string(),
                     };
+                    let confirmed = if encrypted_data.is_confirmed() {
+                        "Confirmed"
+                    } else {
+                        "Unconfirmed"
+                    };
                     let fhdr = encrypted_data.fhdr();
-
+                    let ack = fhdr.fctrl().ack();
+                    let adr = fhdr.fctrl().adr();
+                    let fpending = fhdr.fctrl().f_pending();
+                    let foptslen = fhdr.fctrl().f_opts_len();
                     println!(
-                        "\tDevAddr: {:}, {:?}, FCnt x{:x?}, {}",
+                        "\tDevAddr: {:}, FCtrl(Ack={ack},Adr={adr},FPending={fpending},FOptsLen={foptslen}), FCnt x{:x?}, {}",
                         hex_encode_reversed(fhdr.dev_addr().as_ref()),
-                        fhdr.fctrl(),
                         fhdr.fcnt(),
                         fport
                     );
