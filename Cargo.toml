@@ -8,7 +8,7 @@ publish = false
 [dependencies]
 tokio = { version = "0", features = ["full"] }
 structopt = { version = "0", default-features = false }
-lorawan-encoding = { git = "https://github.com/helium/rust-lorawan.git", features = ["full"], branch = "lthiery/cflist-types"}
+lorawan = { git = "https://github.com/ivajloip/rust-lorawan.git", features = ["full"] }
 helium-console = { git = "https://github.com/helium/helium-console-cli" }
 semtech-udp = { version = "0.7" }
 base64 = "0"

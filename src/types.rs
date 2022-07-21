@@ -1,6 +1,6 @@
 use super::{Deserialize, Deserializer, Result, Serialize, Serializer};
 
-pub use lorawan_encoding::{
+pub use lorawan::{
     default_crypto::DefaultFactory,
     keys,
     maccommands::{MacCommand, MacCommandIterator},
@@ -16,9 +16,7 @@ pub use semtech_udp::{parser::Parser, DataRate, Down, Packet, Up};
 pub struct DevAddr([u8; 4]);
 
 impl DevAddr {
-    pub fn copy_from_parser<T: std::convert::AsRef<[u8]>>(
-        src: &lorawan_encoding::parser::DevAddr<T>,
-    ) -> DevAddr {
+    pub fn copy_from_parser<T: AsRef<[u8]>>(src: &lorawan::parser::DevAddr<T>) -> DevAddr {
         let mut dst = [0u8; 4];
         for (d, s) in dst.iter_mut().zip(src.as_ref().iter()) {
             *d = *s;
@@ -159,5 +157,5 @@ where
     D: Deserializer<'de>,
 {
     let s: &str = Deserialize::deserialize(deserializer).unwrap();
-    Ok(lorawan_encoding::parser::parse(base64::decode(s).unwrap()).unwrap())
+    Ok(lorawan::parser::parse(base64::decode(s).unwrap()).unwrap())
 }
